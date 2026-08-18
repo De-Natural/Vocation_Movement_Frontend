@@ -2,26 +2,83 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* ── Vocation Movement Platform — Global Styles ──
+   Design system per PRD §2. Cream page background, navy text,
+   gold focus states, warm charitable feel. */
 
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #fdfaf4; /* Cream White */
+    --foreground: #0b1437; /* Deep Navy */
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    color: var(--foreground);
+    background: var(--background);
+    font-size: 15px; /* PRD body scale */
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-playfair), Georgia, serif;
+    color: #0b1437;
+  }
+
+  /* PRD §7 Accessibility — clearly visible gold focus outline */
+  :focus-visible {
+    outline: 2px solid #c9972b;
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Respect reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  /* Page shell — centered max-width with responsive padding (PRD §2.3) */
+  .page-container {
+    @apply mx-auto w-full max-w-page px-6 md:px-12 lg:px-20;
+  }
+
+  /* Skeleton shimmer (PRD §5 Skeleton Loader) */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      #ece5d8 0%,
+      #f5efe4 40%,
+      #ece5d8 80%
+    );
+    background-size: 1000px 100%;
+    @apply animate-shimmer rounded-input;
+  }
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+  /* Masonry columns for Pinterest-style grids (PRD §4.7) */
+  .masonry {
+    column-gap: 1.5rem;
+  }
+  .masonry > * {
+    break-inside: avoid;
+    margin-bottom: 1.5rem;
   }
 }
