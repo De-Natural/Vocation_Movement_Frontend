@@ -118,6 +118,14 @@ export const UsersIcon = (p: IconProps) => (
   </Base>
 );
 
+export const PercentIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M19 5 5 19" />
+    <circle cx="6.5" cy="6.5" r="2.5" />
+    <circle cx="17.5" cy="17.5" r="2.5" />
+  </Base>
+);
+
 export const WalletIcon = (p: IconProps) => (
   <Base {...p}>
     <path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2" />

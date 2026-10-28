@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
 import { useSession } from "@/lib/store";
+import { SUPERADMIN_DEMO_EMAIL } from "@/lib/platform-config";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/lib/types";
 
@@ -19,12 +20,24 @@ const roles: { value: UserRole; label: string; name: string; dest: string }[] = 
 
 export default function SignInPage() {
   const [role, setRole] = useState<UserRole>("sponsor");
+  const [email, setEmail] = useState("demo@vocation.org");
   const router = useRouter();
   const { toast } = useToast();
   const setSessionRole = useSession((s) => s.setRole);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
+
+    // A Super Admin signs in through the ordinary "Admin" tab. In production the
+    // backend recognises the tier from the authenticated account; here we sim it
+    // by matching the demo credential. See ARCHITECTURE.md §7.1.
+    if (role === "admin" && email.trim().toLowerCase() === SUPERADMIN_DEMO_EMAIL) {
+      setSessionRole("superadmin", "Msgr. Raphael Eze (Super Admin)");
+      toast("Welcome back, Msgr. Eze!", "success");
+      router.push("/dashboard/superadmin");
+      return;
+    }
+
     const r = roles.find((x) => x.value === role)!;
     setSessionRole(r.value, r.name);
     toast(`Welcome back, ${r.name.split(" ").slice(-1)[0]}!`, "success");
@@ -58,7 +71,7 @@ export default function SignInPage() {
           </div>
         </div>
 
-        <Input label="Email" name="email" type="email" required placeholder="you@example.com" defaultValue="demo@vocation.org" />
+        <Input label="Email" name="email" type="email" required placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
         <Input label="Password" name="password" type="password" required defaultValue="password" />
 
         <div className="flex items-center justify-between text-caption">

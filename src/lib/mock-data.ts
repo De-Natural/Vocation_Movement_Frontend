@@ -1,6 +1,7 @@
 import type {
   Student,
   Sponsor,
+  Admin,
   ThankYouMessage,
   RecurringSponsorship,
   PlatformStats,
@@ -28,12 +29,17 @@ const PHOTOS = [
 const CHAPEL = P("photo-1438032005730-c779502df39b", 20);
 
 const CONGREGATIONS = [
-  "Missionaries of the Precious Blood",
+  "Consoler of the Agonizing Jesus Christ",
+  "Two heart of Love",
   "Sisters of the Sacred Heart",
+  "Little Lilies of Christ Sisters",
   "Order of Preachers (Dominicans)",
-  "Society of the Divine Word",
-  "Congregation of the Holy Spirit",
+  "Missionary Society of St. Paul (MSP)",
+  "Spiritans / Holy Ghost Fathers (CSSp)",
   "Franciscan Friars Minor",
+  "Daughters of Divine Love (DDL)",
+  "Eucharistic Heart of Jesus (EHJ)",
+  "Immaculate Heart of Mary Sisters",
 ];
 
 const SCHOOLS = [
@@ -41,6 +47,8 @@ const SCHOOLS = [
   "Bigard Memorial Seminary",
   "SS. Peter & Paul Seminary",
   "Sacred Heart Novitiate",
+  "St. Thomas Aquinas Major Seminary",
+  "Veritas University",
   "St. Augustine Formation House",
 ];
 
@@ -230,6 +238,63 @@ export const sponsor: Sponsor = {
   activeRecurring: 3,
   monthlyCommitment: 180,
 };
+
+/**
+ * Platform administrators. Provisioned from the backend (never self-registered)
+ * — the frontend only ever reads this list. Exactly one "superadmin" tier
+ * account exists here: the Super Admin who can oversee, suspend, and delete
+ * the regular admins and control the platform commission. See ARCHITECTURE.md.
+ */
+export const admins: Admin[] = [
+  {
+    id: "adm-0",
+    name: "Msgr. Raphael Eze",
+    email: "superadmin@vocation.org",
+    tier: "superadmin",
+    status: "Active",
+    createdAt: "2024-01-08",
+    lastActive: "2026-08-20",
+  },
+  {
+    id: "adm-1",
+    name: "Sister Perpetua Nwosu",
+    email: "perpetua.n@vocation.org",
+    tier: "admin",
+    status: "Active",
+    createdAt: "2024-03-22",
+    lastActive: "2026-08-19",
+  },
+  {
+    id: "adm-2",
+    name: "Fr. Anthony Bello",
+    email: "anthony.b@vocation.org",
+    tier: "admin",
+    status: "Active",
+    createdAt: "2024-06-14",
+    lastActive: "2026-08-18",
+  },
+  {
+    id: "adm-3",
+    name: "Br. Michael Adeyemi",
+    email: "michael.a@vocation.org",
+    tier: "admin",
+    status: "Suspended",
+    createdAt: "2025-02-03",
+    lastActive: "2026-07-01",
+  },
+  {
+    id: "adm-4",
+    name: "Sister Grace Okafor",
+    email: "grace.o@vocation.org",
+    tier: "admin",
+    status: "Active",
+    createdAt: "2025-09-19",
+    lastActive: "2026-08-17",
+  },
+];
+
+/** The single Super Admin — used by the Super Admin dashboard layout. */
+export const superAdmin = admins.find((a) => a.tier === "superadmin")!;
 
 export const recurringSponsorships: RecurringSponsorship[] = [
   {

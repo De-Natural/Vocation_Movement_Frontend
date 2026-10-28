@@ -1,6 +1,23 @@
 /** Domain types for the Vocation Movement Platform. */
 
-export type UserRole = "student" | "sponsor" | "admin";
+export type UserRole = "student" | "sponsor" | "admin" | "superadmin";
+
+/**
+ * Admin accounts are provisioned from the backend (never self-registered).
+ * A "superadmin" tier has every admin power plus oversight of all admins and
+ * exclusive control of the platform commission. See ARCHITECTURE.md §1 / §7.1.
+ */
+export type AdminStatus = "Active" | "Suspended";
+
+export interface Admin {
+  id: string;
+  name: string;
+  email: string;
+  tier: "admin" | "superadmin";
+  status: AdminStatus;
+  createdAt: string; // ISO
+  lastActive?: string; // ISO
+}
 
 export type FormationStage = "Seminarian" | "Novice" | "Postulant";
 

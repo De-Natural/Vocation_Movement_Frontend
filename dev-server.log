@@ -1,0 +1,31 @@
+
+> vocation-scaffold@0.1.0 dev
+> next dev
+
+  ▲ Next.js 14.2.35
+  - Local:        http://localhost:3000
+
+ ✓ Starting...
+ ✓ Ready in 4.9s
+ ○ Compiling / ...
+ ✓ Compiled / in 14s (1536 modules)
+ GET / 200 in 14740ms
+ ○ Compiling /about ...
+ ✓ Compiled /about in 8.6s (1516 modules)
+ GET /about 200 in 8688ms
+ ○ Compiling /mission ...
+ ✓ Compiled /mission in 577ms (1521 modules)
+ GET /mission 200 in 931ms
+ ○ Compiling /contact ...
+ ✓ Compiled /contact in 683ms (1540 modules)
+ GET /contact 200 in 814ms
+ ✓ Compiled /privacy in 447ms (1542 modules)
+ GET /privacy 200 in 559ms
+ ○ Compiling /terms ...
+ ✓ Compiled /terms in 676ms (1544 modules)
+ GET /terms 200 in 852ms
+ ○ Compiling /dashboard/admin/inquiries ...
+ ✓ Compiled /dashboard/admin/inquiries in 5.4s (1567 modules)
+ GET /dashboard/admin/inquiries 200 in 6460ms
+ GET / 200 in 166ms
+ GET / 200 in 89ms
