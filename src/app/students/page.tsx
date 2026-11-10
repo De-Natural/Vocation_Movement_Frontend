@@ -16,7 +16,7 @@ import type { Student } from "@/lib/types";
 
 const uniq = (arr: string[]) => Array.from(new Set(arr));
 
-const FORMATION_STAGES = ["Seminarian", "Novice", "Postulant"];
+const FORMATION_STAGES = ["Professed", "Novice", "Postulant"];
 const BILL_TYPES = ["School Fees", "Medical", "Books", "Clothing", "Feeding"];
 
 function urgency(s: Student) {

@@ -3,8 +3,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { ToastProvider } from "@/components/ui/Toast";
+import { AuthProvider } from "./AuthProvider";
 
-/** Client-side app providers: React Query cache + toast notifications. */
+/** Client-side app providers: React Query cache + Auth hydration + Toast notifications. */
 export function Providers({ children }: { children: ReactNode }) {
   const [client] = useState(
     () =>
@@ -21,7 +22,9 @@ export function Providers({ children }: { children: ReactNode }) {
 
   return (
     <QueryClientProvider client={client}>
-      <ToastProvider>{children}</ToastProvider>
+      <AuthProvider>
+        <ToastProvider>{children}</ToastProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

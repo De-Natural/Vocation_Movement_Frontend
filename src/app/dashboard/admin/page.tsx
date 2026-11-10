@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { StatTile, SectionHeader, PageTitle } from "@/components/dashboard/widgets";
 import { Button } from "@/components/ui/Button";
@@ -9,12 +10,13 @@ import {
   UsersIcon,
   ShieldIcon,
   WalletIcon,
-  HeartHandIcon,
   FileIcon,
+  MessageIcon,
   ArrowRightIcon,
 } from "@/components/ui/icons";
 import { students, platformStats } from "@/lib/mock-data";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { useInquiries } from "@/lib/inquiries-store";
+import { formatCurrency, formatDate, formatRelative } from "@/lib/format";
 
 const pending = students.filter((s) => s.verification === "Pending Verification");
 const overdueBills = students.flatMap((s) =>
@@ -22,6 +24,15 @@ const overdueBills = students.flatMap((s) =>
 );
 
 export default function AdminOverviewPage() {
+  const inquiries = useInquiries((s) => s.inquiries);
+
+  // Persisted store hydrates client-side only — gate counts until mounted.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  const unreadInquiries = mounted ? inquiries.filter((i) => !i.read).length : 0;
+  const recentInquiries = mounted ? inquiries.slice(0, 3) : [];
+
   return (
     <div className="mx-auto max-w-6xl">
       <PageTitle
@@ -34,7 +45,7 @@ export default function AdminOverviewPage() {
         <StatTile label="Total Students" value={platformStats.studentsSupported} icon={<UsersIcon size={18} />} tone="accent" />
         <StatTile label="Pending Verification" value={pending.length} icon={<ShieldIcon size={18} />} tone="alert" hint="Awaiting review" />
         <StatTile label="Funds Raised" value={platformStats.fundsRaised} prefix="$" compact icon={<WalletIcon size={18} />} tone="gold" />
-        <StatTile label="Active Sponsors" value={platformStats.sponsors} icon={<HeartHandIcon size={18} />} tone="success" />
+        <StatTile label="Unread Inquiries" value={unreadInquiries} icon={<MessageIcon size={18} />} tone="navy" hint="From the contact form" />
       </div>
 
       {/* Needs attention */}
@@ -98,6 +109,44 @@ export default function AdminOverviewPage() {
             </Button>
           </Link>
         </div>
+      </section>
+
+      {/* Recent contact inquiries */}
+      <section className="mb-8 rounded-card bg-white p-6 shadow-card">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="font-display text-h3 text-navy">Recent Inquiries</h2>
+          <Badge tone={unreadInquiries ? "gold" : "success"}>
+            {unreadInquiries} unread
+          </Badge>
+        </div>
+        {recentInquiries.length === 0 ? (
+          <p className="py-6 text-center text-caption text-muted">
+            No contact messages yet — submissions from the public contact form will appear here.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {recentInquiries.map((inq) => (
+              <div key={inq.id} className="flex items-center gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gold/12 text-gold-dark">
+                  <MessageIcon size={16} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-caption font-semibold text-navy">
+                    {inq.name}
+                    {!inq.read && <span className="ml-2 align-middle text-label font-normal text-gold-dark">• new</span>}
+                  </p>
+                  <p className="truncate text-label text-muted">{inq.message}</p>
+                </div>
+                <span className="shrink-0 text-label text-muted">{formatRelative(inq.date)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <Link href="/dashboard/admin/inquiries" className="mt-4 block">
+          <Button variant="secondary" size="sm" fullWidth>
+            View all inquiries <ArrowRightIcon size={15} />
+          </Button>
+        </Link>
       </section>
 
       {/* Quick links */}

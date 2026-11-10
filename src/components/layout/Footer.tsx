@@ -14,8 +14,8 @@ const footerLinks = {
     { href: "/contact", label: "Contact" },
   ],
   About: [
-    { href: "/#about", label: "About Apostolate" },
-    { href: "/#about", label: "Our Mission" },
+    { href: "/about", label: "About Apostolate" },
+    { href: "/mission", label: "Our Mission" },
     { href: "/contact", label: "Support" },
   ],
 };

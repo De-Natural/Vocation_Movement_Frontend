@@ -15,6 +15,8 @@ import {
   ShieldIcon,
   FileIcon,
   SettingsIcon,
+  UsersIcon,
+  PercentIcon,
   LogOutIcon,
 } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
@@ -43,8 +45,22 @@ const navByRole: Record<UserRole, NavItem[]> = {
     { href: "/dashboard/admin", label: "Overview", icon: <GridIcon size={20} /> },
     { href: "/dashboard/admin/verifications", label: "Verifications", icon: <ShieldIcon size={20} /> },
     { href: "/dashboard/admin/transactions", label: "Transactions", icon: <WalletIcon size={20} /> },
+    { href: "/dashboard/admin/inquiries", label: "Inquiries", icon: <MessageIcon size={20} /> },
     { href: "/dashboard/admin/reports", label: "Reports", icon: <FileIcon size={20} /> },
     { href: "/dashboard/admin/settings", label: "Settings", icon: <SettingsIcon size={20} /> },
+  ],
+  // Super Admin: every admin destination plus the SA-only Manage Admins and
+  // Commission pages. The two SA-unique items are ordered into the first five
+  // so they survive the mobile bottom-nav cap (items.slice(0, 5)).
+  superadmin: [
+    { href: "/dashboard/superadmin", label: "Overview", icon: <GridIcon size={20} /> },
+    { href: "/dashboard/superadmin/verifications", label: "Verifications", icon: <ShieldIcon size={20} /> },
+    { href: "/dashboard/superadmin/admins", label: "Manage Admins", icon: <UsersIcon size={20} /> },
+    { href: "/dashboard/superadmin/commission", label: "Commission", icon: <PercentIcon size={20} /> },
+    { href: "/dashboard/superadmin/transactions", label: "Transactions", icon: <WalletIcon size={20} /> },
+    { href: "/dashboard/superadmin/inquiries", label: "Inquiries", icon: <MessageIcon size={20} /> },
+    { href: "/dashboard/superadmin/reports", label: "Reports", icon: <FileIcon size={20} /> },
+    { href: "/dashboard/superadmin/settings", label: "Settings", icon: <SettingsIcon size={20} /> },
   ],
 };
 
@@ -52,6 +68,7 @@ const roleLabels: Record<UserRole, string> = {
   student: "Religious Student",
   sponsor: "Sponsor",
   admin: "Administrator",
+  superadmin: "Super Administrator",
 };
 
 export function DashboardShell({

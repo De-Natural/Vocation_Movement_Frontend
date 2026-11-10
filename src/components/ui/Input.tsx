@@ -169,15 +169,15 @@ export function Toggle({
         id={id}
         onClick={() => onChange(!checked)}
         className={cn(
-          "relative h-6 w-11 shrink-0 rounded-progress transition-colors",
+          "relative inline-flex h-6 w-11 shrink-0 items-center rounded-progress transition-colors",
           checked ? "bg-gold" : "bg-inputborder"
         )}
       >
+        {/* Inline transform keeps the knob position independent of Tailwind's
+            JIT (arbitrary/fractional translate utilities can fail to compile). */}
         <span
-          className={cn(
-            "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform",
-            checked ? "translate-x-[22px]" : "translate-x-0.5"
-          )}
+          style={{ transform: checked ? "translateX(22px)" : "translateX(2px)" }}
+          className="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 ease-in-out"
         />
       </button>
       {label && <span className="text-body text-navy">{label}</span>}
