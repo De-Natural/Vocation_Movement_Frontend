@@ -2,7 +2,6 @@
 
 import { PageTitle } from "@/components/dashboard/widgets";
 import { MessagesView } from "@/components/domain/MessagesView";
-import { messages } from "@/lib/mock-data";
 
 export default function SponsorMessagesPage() {
   return (
@@ -11,7 +10,7 @@ export default function SponsorMessagesPage() {
         title="Messages"
         subtitle="Thank-you notes and updates from the students you support."
       />
-      <MessagesView initialMessages={messages} perspective="sponsor" />
+      <MessagesView perspective="sponsor" />
     </div>
   );
 }

@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { type ReactNode } from "react";
 import { Logo } from "@/components/layout/Navbar";
-import { heroImage } from "@/lib/mock-data";
+import { heroImage } from "@/lib/site-images";
 
 /** Split-screen auth shell — imagery left, form right (PRD §4.2). */
 export function AuthShell({

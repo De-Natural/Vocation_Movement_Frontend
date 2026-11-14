@@ -52,6 +52,15 @@ export const CheckCircleIcon = (p: IconProps) => (
   </Base>
 );
 
+export const EyeOffIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c4.82 0 8.6 3.15 9.94 6.65a1 1 0 0 1 0 .7 10.75 10.75 0 0 1-1.44 2.49" />
+    <path d="M14.08 14.16a3 3 0 0 1-4.24-4.24" />
+    <path d="M17.48 17.5a10.75 10.75 0 0 1-15.42-5.15 1 1 0 0 1 0-.7 10.75 10.75 0 0 1 4.45-5.14" />
+    <path d="m2 2 20 20" />
+  </Base>
+);
+
 export const XIcon = (p: IconProps) => (
   <Base {...p}>
     <path d="M18 6 6 18M6 6l12 12" />

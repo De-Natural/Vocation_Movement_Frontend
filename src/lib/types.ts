@@ -41,6 +41,8 @@ export type VerificationStatus =
 
 export interface Contribution {
   id: string;
+  /** Parent payment id (a payment may be split across bills). */
+  paymentId?: string;
   billId: string;
   donorName: string; // "Anonymous" when anonymous
   anonymous: boolean;
@@ -137,4 +139,15 @@ export interface PlatformStats {
   fundsRaised: number;
   sponsors: number;
   activeSponsorships: number;
+}
+
+/** A public contact-form submission (admin inbox). */
+export interface ContactInquiry {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  message: string;
+  date: string; // ISO
+  read: boolean;
 }

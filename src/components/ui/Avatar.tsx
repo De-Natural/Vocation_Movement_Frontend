@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { mediaUrl } from "@/lib/media";
 import { cn } from "@/lib/utils";
 import { ShieldIcon } from "./icons";
 
@@ -58,10 +59,14 @@ export function Avatar({
   }
 
   if (src) {
+    const url = mediaUrl(src);
     return (
       <div className={cn("relative overflow-hidden rounded-full bg-warm", s.box, ringCls, className)}>
         <Image
-          src={src}
+          src={url}
+          // Uploaded files are served by the backend via the /storage proxy;
+          // skip the optimizer so it doesn't need to fetch them server-side.
+          unoptimized={url.startsWith("/storage/")}
           alt={name ? `Photo of ${name}` : "Profile photo"}
           fill
           sizes={`${s.px}px`}

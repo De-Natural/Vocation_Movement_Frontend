@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { PageTitle } from "@/components/dashboard/widgets";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -8,41 +8,50 @@ import { Modal } from "@/components/ui/Modal";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
 import { CheckIcon, MessageIcon, XIcon } from "@/components/ui/icons";
-import { useInquiries, type ContactInquiry } from "@/lib/inquiries-store";
+import { adminApi } from "@/lib/admin-api";
+import { useApi, apiErrorMessage } from "@/lib/use-api";
 import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import type { ContactInquiry } from "@/lib/types";
 
 type Filter = "unread" | "all";
 
 export default function InquiriesPage() {
-  const inquiries = useInquiries((s) => s.inquiries);
-  const markRead = useInquiries((s) => s.markRead);
-  const remove = useInquiries((s) => s.remove);
+  const { data, error, loading, reload, setData } = useApi(() => adminApi.inquiries());
+  const inquiries = data ?? [];
   const { toast } = useToast();
-
-  // Persisted store hydrates from localStorage on the client only — wait for
-  // mount before rendering the list so server and client markup match.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
 
   const [filter, setFilter] = useState<Filter>("all");
   const [active, setActive] = useState<ContactInquiry | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ContactInquiry | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const unreadCount = inquiries.filter((i) => !i.read).length;
   const visible = filter === "unread" ? inquiries.filter((i) => !i.read) : inquiries;
 
   function open(inquiry: ContactInquiry) {
     setActive(inquiry);
-    if (!inquiry.read) markRead(inquiry.id);
+    if (!inquiry.read) {
+      // Optimistic: mark read locally, persist in the background.
+      setData((list) => list && list.map((i) => (i.id === inquiry.id ? { ...i, read: true } : i)));
+      adminApi.markInquiryRead(inquiry.id).catch(() => void reload());
+    }
   }
 
-  function confirmDelete() {
+  async function confirmDelete() {
     if (!pendingDelete) return;
-    remove(pendingDelete.id);
-    toast("Inquiry deleted.", "info");
-    setPendingDelete(null);
-    setActive(null);
+    setDeleting(true);
+    try {
+      await adminApi.deleteInquiry(pendingDelete.id);
+      setData((list) => list && list.filter((i) => i.id !== pendingDelete.id));
+      toast("Inquiry deleted.", "info");
+      setPendingDelete(null);
+      setActive(null);
+    } catch (err) {
+      toast(apiErrorMessage(err, "Couldn't delete the inquiry."), "error");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   const TABS: { key: Filter; label: string; count: number }[] = [
@@ -73,12 +82,19 @@ export default function InquiriesPage() {
         ))}
       </div>
 
-      {!mounted ? (
+      {loading ? (
         <div className="space-y-3">
           {[0, 1, 2].map((i) => (
             <div key={i} className="h-20 animate-pulse rounded-card bg-white/60 shadow-card" />
           ))}
         </div>
+      ) : error ? (
+        <EmptyState
+          icon={<MessageIcon size={28} />}
+          title="Couldn't load inquiries"
+          description={error}
+          action={<Button variant="secondary" onClick={() => void reload()}>Try again</Button>}
+        />
       ) : visible.length === 0 ? (
         <EmptyState
           icon={<MessageIcon size={28} />}
@@ -121,7 +137,7 @@ export default function InquiriesPage() {
                   {!inq.read && <Badge tone="gold">New</Badge>}
                 </div>
                 <p className="truncate text-caption text-muted">
-                  {inq.email} · {inq.phone}
+                  {[inq.email, inq.phone].filter(Boolean).join(" · ")}
                 </p>
                 <p className="mt-1 line-clamp-2 text-body text-navy/80">{inq.message}</p>
               </div>
@@ -170,9 +186,13 @@ export default function InquiriesPage() {
               </div>
               <div>
                 <p className="text-label uppercase tracking-wide text-muted">Phone</p>
-                <a href={`tel:${active.phone}`} className="font-semibold text-accent hover:underline">
-                  {active.phone}
-                </a>
+                {active.phone ? (
+                  <a href={`tel:${active.phone}`} className="font-semibold text-accent hover:underline">
+                    {active.phone}
+                  </a>
+                ) : (
+                  <p className="text-muted">—</p>
+                )}
               </div>
             </div>
             <div>
@@ -191,11 +211,11 @@ export default function InquiriesPage() {
         size="sm"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setPendingDelete(null)}>
+            <Button variant="secondary" onClick={() => setPendingDelete(null)} disabled={deleting}>
               Cancel
             </Button>
-            <Button variant="danger" onClick={confirmDelete}>
-              Delete
+            <Button variant="danger" onClick={() => void confirmDelete()} disabled={deleting}>
+              {deleting ? "Deleting…" : "Delete"}
             </Button>
           </>
         }

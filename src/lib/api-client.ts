@@ -7,24 +7,69 @@ export interface ApiResponse<T = unknown> {
   message?: string;
 }
 
+/** Backend error envelope: { success: false, error: { code, message, statusCode, details? } } */
+interface ErrorEnvelope {
+  success: false;
+  error?: { code?: string; message?: string; statusCode?: number; details?: unknown };
+  message?: string;
+}
+
 export class ApiError extends Error {
   status: number;
+  /** Machine-readable backend code, e.g. INVALID_CREDENTIALS, ROLE_MISMATCH. */
+  code?: string;
   data?: unknown;
 
-  constructor(message: string, status: number, data?: unknown) {
+  constructor(message: string, status: number, data?: unknown, code?: string) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.data = data;
+    this.code = code;
   }
+}
+
+function parseError(body: unknown, fallback: string): { message: string; code?: string } {
+  if (typeof body === "object" && body !== null) {
+    const env = body as ErrorEnvelope;
+    const message = env.error?.message || env.message;
+    if (message) return { message, code: env.error?.code };
+  }
+  return { message: fallback };
+}
+
+/** Body of POST /api/auth/register (backend registerSchema). */
+export interface RegisterPayload {
+  email: string;
+  password: string;
+  role: "student" | "sponsor";
+  fullName: string;
+  country?: string;
+  /** Required for students, with congregation and school. */
+  formationStage?: "Seminarian" | "Novice" | "Postulant";
+  congregation?: string;
+  school?: string;
+}
+
+/** Pagination info the backend attaches to list responses (`meta`). */
+export interface PaginationMeta {
+  page: number;
+  perPage: number;
+  total: number;
+  totalPages: number;
 }
 
 export interface RequestOptions extends RequestInit {
   skipAuth?: boolean;
+  /** Return `{ data, meta }` instead of just `data` (for paginated lists). */
+  withMeta?: boolean;
   params?: Record<string, string | number | boolean | undefined>;
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
+// Empty by default: requests go to same-origin /api/*, which next.config.mjs
+// proxies to the backend (BACKEND_URL). Only set NEXT_PUBLIC_API_URL to bypass
+// the proxy and call the API cross-origin.
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
 
 let isRefreshing = false;
 let failedQueue: Array<{
@@ -54,7 +99,7 @@ export async function request<T = unknown>(
   endpoint: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  const { skipAuth = false, params, headers: customHeaders, ...customConfig } = options;
+  const { skipAuth = false, withMeta = false, params, headers: customHeaders, ...customConfig } = options;
 
   let url = endpoint.startsWith("http")
     ? endpoint
@@ -169,13 +214,12 @@ export async function request<T = unknown>(
     const responseData = isJson ? await response.json() : await response.text();
 
     if (!response.ok) {
-      const errorMessage =
-        (typeof responseData === "object" && responseData !== null
-          ? (responseData as { message?: string }).message
-          : null) ||
-        response.statusText ||
-        "Request failed";
-      throw new ApiError(errorMessage, response.status, responseData);
+      const { message, code } = parseError(
+        responseData,
+        response.statusText || "Request failed"
+      );
+      if (code === "MAINTENANCE_MODE") goToMaintenancePage();
+      throw new ApiError(message, response.status, responseData, code);
     }
 
     // Unwrap standard envelope { success: true, data: ... }
@@ -188,6 +232,9 @@ export async function request<T = unknown>(
       const envelope = responseData as ApiResponse<T>;
       if (!envelope.success) {
         throw new ApiError(envelope.message || "Operation failed", response.status, envelope);
+      }
+      if (withMeta) {
+        return { data: envelope.data, meta: (responseData as { meta?: unknown }).meta } as T;
       }
       return envelope.data;
     }
@@ -202,6 +249,18 @@ export async function request<T = unknown>(
       0
     );
   }
+}
+
+/**
+ * The backend answers 503 MAINTENANCE_MODE to everyone but staff while the
+ * Super-Admin has maintenance mode on: send the visitor to the notice page.
+ * (Sign-in stays put so the error message shows there.)
+ */
+function goToMaintenancePage() {
+  if (typeof window === "undefined") return;
+  const path = window.location.pathname;
+  if (path.startsWith("/maintenance") || path.startsWith("/signin")) return;
+  window.location.href = "/maintenance";
 }
 
 /** Pre-configured HTTP methods */
@@ -233,17 +292,22 @@ export const apiClient = {
   delete: <T>(url: string, options?: RequestOptions) =>
     request<T>(url, { ...options, method: "DELETE" }),
 
+  /** GET a paginated list, keeping the envelope's `meta`. */
+  getPage: <T, M = PaginationMeta>(url: string, options?: RequestOptions) =>
+    request<{ data: T; meta?: M }>(url, { ...options, method: "GET", withMeta: true }),
+
   /** Standard auth endpoint calls matching the backend guide */
   auth: {
-    login: (credentials: { email: string; password: string }) =>
+    /** `role` is the sign-in tab; the backend rejects a mismatch (ROLE_MISMATCH). */
+    login: (credentials: { email: string; password: string; role?: "student" | "sponsor" | "admin" }) =>
       apiClient.post<{ accessToken: string; role: UserRole; userId: string; name?: string }>(
         "/api/auth/login",
         credentials,
         { skipAuth: true }
       ),
 
-    register: (payload: unknown) =>
-      apiClient.post<{ message?: string; userId?: string }>(
+    register: (payload: RegisterPayload) =>
+      apiClient.post<{ userId: string; role: UserRole }>(
         "/api/auth/register",
         payload,
         { skipAuth: true }
@@ -269,9 +333,15 @@ export const apiClient = {
       apiClient.post<{ message?: string }>("/api/auth/logout", {}, { skipAuth: true }),
 
     verifyEmail: (token: string) =>
-      apiClient.post<{ message?: string }>(
-        "/api/auth/verify-email",
-        { token },
+      apiClient.get<{ verified: boolean }>(
+        `/api/auth/verify-email/${encodeURIComponent(token)}`,
+        { skipAuth: true }
+      ),
+
+    resendVerification: (email: string) =>
+      apiClient.post<{ sent: boolean }>(
+        "/api/auth/resend-verification",
+        { email },
         { skipAuth: true }
       ),
 

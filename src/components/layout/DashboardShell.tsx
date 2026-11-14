@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { type ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, type ReactNode } from "react";
 import { Logo } from "./Navbar";
 import { Avatar } from "@/components/ui/Avatar";
 import {
@@ -20,6 +20,8 @@ import {
   LogOutIcon,
 } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
+import { useSession } from "@/lib/store";
+import { apiClient } from "@/lib/api-client";
 import type { UserRole } from "@/lib/types";
 
 interface NavItem {
@@ -49,14 +51,16 @@ const navByRole: Record<UserRole, NavItem[]> = {
     { href: "/dashboard/admin/reports", label: "Reports", icon: <FileIcon size={20} /> },
     { href: "/dashboard/admin/settings", label: "Settings", icon: <SettingsIcon size={20} /> },
   ],
-  // Super Admin: every admin destination plus the SA-only Manage Admins and
-  // Commission pages. The two SA-unique items are ordered into the first five
-  // so they survive the mobile bottom-nav cap (items.slice(0, 5)).
+  // Super Admin: every admin destination plus the SA-only oversight pages
+  // (Manage Admins, Users, Activity Log, Commission). Oversight items come
+  // first so they survive the mobile bottom-nav cap (items.slice(0, 5)).
   superadmin: [
     { href: "/dashboard/superadmin", label: "Overview", icon: <GridIcon size={20} /> },
-    { href: "/dashboard/superadmin/verifications", label: "Verifications", icon: <ShieldIcon size={20} /> },
-    { href: "/dashboard/superadmin/admins", label: "Manage Admins", icon: <UsersIcon size={20} /> },
+    { href: "/dashboard/superadmin/admins", label: "Manage Admins", icon: <ShieldIcon size={20} /> },
+    { href: "/dashboard/superadmin/users", label: "Users", icon: <UsersIcon size={20} /> },
+    { href: "/dashboard/superadmin/activity", label: "Activity Log", icon: <ChartIcon size={20} /> },
     { href: "/dashboard/superadmin/commission", label: "Commission", icon: <PercentIcon size={20} /> },
+    { href: "/dashboard/superadmin/verifications", label: "Verifications", icon: <ShieldIcon size={20} /> },
     { href: "/dashboard/superadmin/transactions", label: "Transactions", icon: <WalletIcon size={20} /> },
     { href: "/dashboard/superadmin/inquiries", label: "Inquiries", icon: <MessageIcon size={20} /> },
     { href: "/dashboard/superadmin/reports", label: "Reports", icon: <FileIcon size={20} /> },
@@ -78,12 +82,43 @@ export function DashboardShell({
   children,
 }: {
   role: UserRole;
-  userName: string;
+  /** Defaults to the signed-in user's name / photo from the session. */
+  userName?: string;
   userPhoto?: string;
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const clearSession = useSession((s) => s.clearSession);
+  const sessionName = useSession((s) => s.name);
+  const sessionPhoto = useSession((s) => s.photo);
+  const status = useSession((s) => s.status);
+  const setProfile = useSession((s) => s.setProfile);
+
+  // Sign-in doesn't return the photo — load it once from /me.
+  useEffect(() => {
+    if (status !== "authenticated" || sessionPhoto !== undefined) return;
+    apiClient.auth
+      .me()
+      .then((me) => setProfile({ name: me.name, photo: me.photo ?? null }))
+      .catch(() => setProfile({ photo: null }));
+  }, [status, sessionPhoto, setProfile]);
+
+  const displayName = userName ?? sessionName ?? "";
+  const displayPhoto = userPhoto ?? sessionPhoto ?? undefined;
   const items = navByRole[role];
+
+  // Revoke the refresh token server-side (also clears the vm_refresh/vm_role
+  // cookies), then drop the in-memory session even if the call failed.
+  async function signOut() {
+    try {
+      await apiClient.auth.logout();
+    } catch {
+      // Network/server error: still sign out locally.
+    }
+    clearSession();
+    router.push("/");
+  }
 
   const isActive = (href: string) =>
     pathname === href || (href !== `/dashboard/${role}` && pathname.startsWith(href));
@@ -117,18 +152,19 @@ export function DashboardShell({
 
         <div className="border-t border-inputborder/30 p-4">
           <div className="flex items-center gap-3">
-            <Avatar name={userName} src={userPhoto} size="sm" />
+            <Avatar name={displayName} src={displayPhoto} size="sm" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-caption font-semibold text-navy">{userName}</p>
+              <p className="truncate text-caption font-semibold text-navy">{displayName}</p>
               <p className="truncate text-label text-muted">{roleLabels[role]}</p>
             </div>
           </div>
-          <Link
-            href="/"
-            className="mt-3 flex items-center gap-2 rounded-input px-3 py-2 text-caption text-muted transition-colors hover:bg-warm hover:text-alert"
+          <button
+            type="button"
+            onClick={signOut}
+            className="mt-3 flex w-full items-center gap-2 rounded-input px-3 py-2 text-caption text-muted transition-colors hover:bg-warm hover:text-alert"
           >
             <LogOutIcon size={16} /> Sign out
-          </Link>
+          </button>
         </div>
       </aside>
 
@@ -140,7 +176,7 @@ export function DashboardShell({
           </div>
           <div className="ml-auto flex items-center gap-3">
             <span className="hidden text-caption text-muted sm:inline">{roleLabels[role]}</span>
-            <Avatar name={userName} src={userPhoto} size="sm" />
+            <Avatar name={displayName} src={displayPhoto} size="sm" />
           </div>
         </header>
 

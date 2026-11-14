@@ -14,24 +14,38 @@ import {
   MessageIcon,
   ArrowRightIcon,
 } from "@/components/ui/icons";
-import { students, platformStats } from "@/lib/mock-data";
-import { useInquiries } from "@/lib/inquiries-store";
+import { adminApi, type AdminOverview } from "@/lib/admin-api";
+import { ApiError } from "@/lib/api-client";
 import { formatCurrency, formatDate, formatRelative } from "@/lib/format";
-
-const pending = students.filter((s) => s.verification === "Pending Verification");
-const overdueBills = students.flatMap((s) =>
-  s.bills.filter((b) => b.status === "Overdue").map((b) => ({ student: s, bill: b }))
-);
+import { useStaffBase } from "@/lib/use-staff";
 
 export default function AdminOverviewPage() {
-  const inquiries = useInquiries((s) => s.inquiries);
+  // Shared with the super-admin dashboard: keep links inside it.
+  const base = useStaffBase();
+  const [data, setData] = useState<AdminOverview | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Persisted store hydrates client-side only — gate counts until mounted.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    adminApi
+      .overview()
+      .then(setData)
+      .catch((err) =>
+        setError(
+          err instanceof ApiError && err.status === 0
+            ? "Can't reach the server."
+            : err instanceof Error
+              ? err.message
+              : "Couldn't load platform data."
+        )
+      );
+  }, []);
 
-  const unreadInquiries = mounted ? inquiries.filter((i) => !i.read).length : 0;
-  const recentInquiries = mounted ? inquiries.slice(0, 3) : [];
+  const kpis = data?.kpis;
+  const pending = data?.verificationQueue ?? [];
+  const overdueBills = data?.overdueBills ?? [];
+  const recentInquiries = (data?.recentInquiries ?? []).slice(0, 3);
+  const unreadInquiries = kpis?.unreadInquiries ?? 0;
+  const pendingCount = kpis?.pendingVerification ?? pending.length;
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -40,11 +54,17 @@ export default function AdminOverviewPage() {
         subtitle="Monitor students, verify profiles, and keep every transaction transparent."
       />
 
+      {error && (
+        <p role="alert" className="mb-6 rounded-input bg-alert/10 px-4 py-3 text-caption text-alert">
+          {error}
+        </p>
+      )}
+
       {/* KPIs */}
-      <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile label="Total Students" value={platformStats.studentsSupported} icon={<UsersIcon size={18} />} tone="accent" />
-        <StatTile label="Pending Verification" value={pending.length} icon={<ShieldIcon size={18} />} tone="alert" hint="Awaiting review" />
-        <StatTile label="Funds Raised" value={platformStats.fundsRaised} prefix="$" compact icon={<WalletIcon size={18} />} tone="gold" />
+      <div className={`mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4 ${!data && !error ? "animate-pulse" : ""}`}>
+        <StatTile label="Total Students" value={kpis?.studentsSupported ?? 0} icon={<UsersIcon size={18} />} tone="accent" />
+        <StatTile label="Pending Verification" value={pendingCount} icon={<ShieldIcon size={18} />} tone="alert" hint="Awaiting review" />
+        <StatTile label="Funds Raised" value={kpis?.fundsRaised ?? 0} prefix="$" compact icon={<WalletIcon size={18} />} tone="gold" />
         <StatTile label="Unread Inquiries" value={unreadInquiries} icon={<MessageIcon size={18} />} tone="navy" hint="From the contact form" />
       </div>
 
@@ -54,7 +74,7 @@ export default function AdminOverviewPage() {
         <div className="rounded-card bg-white p-6 shadow-card">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="font-display text-h3 text-navy">Verification Queue</h2>
-            <Badge tone={pending.length ? "alert" : "success"}>{pending.length} pending</Badge>
+            <Badge tone={pendingCount ? "alert" : "success"}>{pendingCount} pending</Badge>
           </div>
           {pending.length === 0 ? (
             <p className="py-6 text-center text-caption text-muted">All caught up — no profiles awaiting review.</p>
@@ -72,7 +92,7 @@ export default function AdminOverviewPage() {
               ))}
             </div>
           )}
-          <Link href="/dashboard/admin/verifications" className="mt-4 block">
+          <Link href={`${base}/verifications`} className="mt-4 block">
             <Button variant="secondary" size="sm" fullWidth>
               Review queue <ArrowRightIcon size={15} />
             </Button>
@@ -89,21 +109,21 @@ export default function AdminOverviewPage() {
             <p className="py-6 text-center text-caption text-muted">No overdue bills across the platform.</p>
           ) : (
             <div className="space-y-3">
-              {overdueBills.slice(0, 3).map(({ student, bill }) => (
+              {overdueBills.slice(0, 3).map((bill) => (
                 <div key={bill.id} className="flex items-center gap-3">
-                  <Avatar name={student.name} src={student.photo} size="sm" />
+                  <Avatar name={bill.studentName} src={bill.studentPhoto} size="sm" />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-caption font-semibold text-navy">{bill.name}</p>
-                    <p className="truncate text-label text-muted">{student.name} · due {formatDate(bill.dueDate)}</p>
+                    <p className="truncate text-caption font-semibold text-navy">{bill.billName}</p>
+                    <p className="truncate text-label text-muted">{bill.studentName} · due {formatDate(bill.dueDate)}</p>
                   </div>
                   <span className="shrink-0 text-caption font-semibold text-alert">
-                    {formatCurrency(Math.max(0, bill.total - bill.raised))}
+                    {formatCurrency(bill.gap)}
                   </span>
                 </div>
               ))}
             </div>
           )}
-          <Link href="/dashboard/admin/transactions" className="mt-4 block">
+          <Link href={`${base}/transactions`} className="mt-4 block">
             <Button variant="secondary" size="sm" fullWidth>
               View transactions <ArrowRightIcon size={15} />
             </Button>
@@ -133,7 +153,7 @@ export default function AdminOverviewPage() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-caption font-semibold text-navy">
                     {inq.name}
-                    {!inq.read && <span className="ml-2 align-middle text-label font-normal text-gold-dark">• new</span>}
+                    {inq.read === false && <span className="ml-2 align-middle text-label font-normal text-gold-dark">• new</span>}
                   </p>
                   <p className="truncate text-label text-muted">{inq.message}</p>
                 </div>
@@ -142,7 +162,7 @@ export default function AdminOverviewPage() {
             ))}
           </div>
         )}
-        <Link href="/dashboard/admin/inquiries" className="mt-4 block">
+        <Link href={`${base}/inquiries`} className="mt-4 block">
           <Button variant="secondary" size="sm" fullWidth>
             View all inquiries <ArrowRightIcon size={15} />
           </Button>
@@ -153,9 +173,9 @@ export default function AdminOverviewPage() {
       <SectionHeader title="Administration" />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {[
-          { href: "/dashboard/admin/verifications", icon: <ShieldIcon size={22} />, title: "Verifications", desc: "Approve, reject, or request more info." },
-          { href: "/dashboard/admin/transactions", icon: <WalletIcon size={22} />, title: "Transactions", desc: "Full, filterable payment feed." },
-          { href: "/dashboard/admin/reports", icon: <FileIcon size={22} />, title: "Reports", desc: "Congregation & platform reports." },
+          { href: `${base}/verifications`, icon: <ShieldIcon size={22} />, title: "Verifications", desc: "Approve, reject, or request more info." },
+          { href: `${base}/transactions`, icon: <WalletIcon size={22} />, title: "Transactions", desc: "Full, filterable payment feed." },
+          { href: `${base}/reports`, icon: <FileIcon size={22} />, title: "Reports", desc: "Congregation & platform reports." },
         ].map((c) => (
           <Link key={c.href} href={c.href} className="group rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-cardhover">
             <span className="flex h-11 w-11 items-center justify-center rounded-input bg-gold/12 text-gold-dark">{c.icon}</span>

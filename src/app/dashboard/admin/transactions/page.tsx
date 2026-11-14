@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { PageTitle } from "@/components/dashboard/widgets";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
@@ -9,83 +9,64 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { PaymentStatusBadge, RecurringBadge } from "@/components/domain/StatusBadges";
 import { useToast } from "@/components/ui/Toast";
 import { DownloadIcon, WalletIcon } from "@/components/ui/icons";
-import { students } from "@/lib/mock-data";
+import { adminApi, type TransactionFilters } from "@/lib/admin-api";
+import { useApi, apiErrorMessage } from "@/lib/use-api";
 import { formatCurrency, formatDate } from "@/lib/format";
 
-interface FeedRow {
-  id: string;
-  date: string;
-  donorName: string;
-  anonymous: boolean;
-  studentName: string;
-  congregation: string;
-  billName: string;
-  amount: number;
-  transactionId: string;
-  status: string;
-  recurring?: boolean;
-}
-
-// Flatten every contribution across all students into one platform feed.
-const feed: FeedRow[] = students
-  .flatMap((s) =>
-    s.bills.flatMap((b) =>
-      b.contributions.map((c) => ({
-        id: c.id,
-        date: c.date,
-        donorName: c.donorName,
-        anonymous: c.anonymous,
-        studentName: s.name,
-        congregation: s.congregation,
-        billName: b.name,
-        amount: c.amount,
-        transactionId: c.transactionId,
-        status: c.status,
-        recurring: c.recurring,
-      }))
-    )
-  )
-  .sort((a, b) => b.date.localeCompare(a.date));
-
-const congregations = Array.from(new Set(students.map((s) => s.congregation)));
+const PER_PAGE = 50;
 
 export default function TransactionsPage() {
   const { toast } = useToast();
   const [congregation, setCongregation] = useState("all");
-  const [donorType, setDonorType] = useState("all");
+  const [donorType, setDonorType] = useState<"all" | "named" | "anonymous">("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [page, setPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
 
-  const filtered = useMemo(
-    () =>
-      feed.filter((r) => {
-        if (congregation !== "all" && r.congregation !== congregation) return false;
-        if (donorType === "named" && r.anonymous) return false;
-        if (donorType === "anonymous" && !r.anonymous) return false;
-        if (from && new Date(r.date) < new Date(from)) return false;
-        if (to && new Date(r.date) > new Date(to)) return false;
-        return true;
-      }),
-    [congregation, donorType, from, to]
+  // Filtering, totals and pagination all happen on the server.
+  const filters: TransactionFilters = {
+    congregation: congregation === "all" ? undefined : congregation,
+    donorType,
+    from: from || undefined,
+    to: to || undefined,
+  };
+  const { data, error, loading, reload } = useApi(
+    () => adminApi.transactions({ ...filters, page, perPage: PER_PAGE }),
+    [congregation, donorType, from, to, page]
   );
+  // Congregation filter options come from the real per-congregation report.
+  const { data: reports } = useApi(() => adminApi.reports());
+  const congregations = (reports?.byCongregation ?? []).map((c) => c.congregation);
 
-  const total = filtered.reduce((sum, r) => sum + r.amount, 0);
+  const filtered = data?.data.transactions ?? [];
+  const total = data?.data.totalAmount ?? 0;
+  const count = data?.meta?.total ?? filtered.length;
+  const totalPages = data?.meta?.totalPages ?? 1;
 
-  function exportCsv() {
-    const header = ["Date", "Donor", "Student", "Congregation", "Bill", "Amount", "Transaction ID", "Status"];
-    const lines = filtered.map((r) =>
-      [formatDate(r.date), r.donorName, r.studentName, r.congregation, r.billName, r.amount, r.transactionId, r.status]
-        .map((v) => `"${String(v).replace(/"/g, '""')}"`)
-        .join(",")
-    );
-    const blob = new Blob([[header.join(","), ...lines].join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "vocation-transactions.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-    toast("Transactions exported to CSV.", "success");
+  // Changing a filter returns to page 1.
+  const onFilter = <T,>(set: (v: T) => void) => (v: T) => {
+    set(v);
+    setPage(1);
+  };
+
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      const csv = await adminApi.transactionsCsv(filters);
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "vocation-transactions.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+      toast("Transactions exported to CSV.", "success");
+    } catch (err) {
+      toast(apiErrorMessage(err, "Export failed."), "error");
+    } finally {
+      setExporting(false);
+    }
   }
 
   return (
@@ -101,24 +82,24 @@ export default function TransactionsPage() {
           <Select
             label="Congregation"
             value={congregation}
-            onChange={(e) => setCongregation(e.target.value)}
+            onChange={(e) => onFilter(setCongregation)(e.target.value)}
             options={[{ value: "all", label: "All congregations" }, ...congregations.map((c) => ({ value: c, label: c }))]}
           />
           <Select
             label="Donor type"
             value={donorType}
-            onChange={(e) => setDonorType(e.target.value)}
+            onChange={(e) => onFilter(setDonorType)(e.target.value as typeof donorType)}
             options={[
               { value: "all", label: "All donors" },
               { value: "named", label: "Named only" },
               { value: "anonymous", label: "Anonymous only" },
             ]}
           />
-          <Input label="From" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-          <Input label="To" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          <Input label="From" type="date" value={from} onChange={(e) => onFilter(setFrom)(e.target.value)} />
+          <Input label="To" type="date" value={to} onChange={(e) => onFilter(setTo)(e.target.value)} />
           <div className="flex items-end">
-            <Button variant="secondary" fullWidth onClick={exportCsv}>
-              <DownloadIcon size={16} /> Export CSV
+            <Button variant="secondary" fullWidth onClick={() => void exportCsv()} disabled={exporting || count === 0}>
+              <DownloadIcon size={16} /> {exporting ? "Exporting…" : "Export CSV"}
             </Button>
           </div>
         </div>
@@ -127,16 +108,29 @@ export default function TransactionsPage() {
       {/* Summary bar */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-card bg-navy px-5 py-3 text-white">
         <span className="text-caption text-white/70">
-          {filtered.length} transaction{filtered.length !== 1 ? "s" : ""}
+          {loading ? "Loading…" : `${count} transaction${count !== 1 ? "s" : ""}`}
         </span>
         <span className="font-display text-h3">{formatCurrency(total)} total</span>
       </div>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <div className="space-y-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-14 animate-pulse rounded-card bg-white/60 shadow-card" />
+          ))}
+        </div>
+      ) : error ? (
         <EmptyState
           icon={<WalletIcon size={28} />}
-          title="No transactions match your filters"
-          description="Try widening the date range or clearing filters."
+          title="Couldn't load transactions"
+          description={error}
+          action={<Button variant="secondary" onClick={() => void reload()}>Try again</Button>}
+        />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon={<WalletIcon size={28} />}
+          title={congregation === "all" && donorType === "all" && !from && !to ? "No transactions yet" : "No transactions match your filters"}
+          description={congregation === "all" && donorType === "all" && !from && !to ? "Contributions from sponsors will appear here as soon as they are made." : "Try widening the date range or clearing filters."}
           action={
             <Button
               variant="secondary"
@@ -145,6 +139,7 @@ export default function TransactionsPage() {
                 setDonorType("all");
                 setFrom("");
                 setTo("");
+                setPage(1);
               }}
             >
               Clear filters
@@ -175,6 +170,7 @@ export default function TransactionsPage() {
                       <div className="flex items-center gap-2">
                         <Avatar name={r.donorName} anonymous={r.anonymous} size="xs" />
                         <span className="font-medium text-navy">{r.donorName}</span>
+                        {r.anonymous && <span className="text-label text-muted">(anonymous)</span>}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-navy">{r.studentName}</td>
@@ -183,7 +179,7 @@ export default function TransactionsPage() {
                     <td className="px-4 py-3 font-mono text-accent">{r.transactionId}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
-                        <PaymentStatusBadge status={r.status as "Confirmed" | "Pending" | "Failed"} />
+                        <PaymentStatusBadge status={r.status} />
                         {r.recurring && <RecurringBadge />}
                       </div>
                     </td>
@@ -201,7 +197,10 @@ export default function TransactionsPage() {
                   <div className="flex items-center gap-2">
                     <Avatar name={r.donorName} anonymous={r.anonymous} size="sm" />
                     <div>
-                      <p className="text-caption font-semibold text-navy">{r.donorName}</p>
+                      <p className="text-caption font-semibold text-navy">
+                        {r.donorName}
+                        {r.anonymous && <span className="ml-1 text-label font-normal text-muted">(anonymous)</span>}
+                      </p>
                       <p className="text-label text-muted">{formatDate(r.date)}</p>
                     </div>
                   </div>
@@ -212,12 +211,24 @@ export default function TransactionsPage() {
                   <p className="font-mono text-accent">{r.transactionId}</p>
                 </div>
                 <div className="mt-2 flex items-center gap-1.5">
-                  <PaymentStatusBadge status={r.status as "Confirmed" | "Pending" | "Failed"} />
+                  <PaymentStatusBadge status={r.status} />
                   {r.recurring && <RecurringBadge />}
                 </div>
               </div>
             ))}
           </div>
+
+          {totalPages > 1 && (
+            <div className="mt-4 flex items-center justify-between">
+              <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+                Previous
+              </Button>
+              <span className="text-caption text-muted">Page {page} of {totalPages}</span>
+              <Button variant="secondary" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
+                Next
+              </Button>
+            </div>
+          )}
         </>
       )}
     </div>

@@ -2,12 +2,11 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { AvatarStack } from "@/components/ui/Avatar";
+import { Avatar, AvatarStack } from "@/components/ui/Avatar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
 import { BillCard } from "@/components/domain/BillCard";
@@ -22,14 +21,44 @@ import {
   HeartHandIcon,
   ArrowRightIcon,
 } from "@/components/ui/icons";
-import { getStudentBySlug } from "@/lib/mock-data";
+import { publicApi } from "@/lib/public-api";
+import { useApi } from "@/lib/use-api";
+import { mediaUrl } from "@/lib/media";
+import { ApiError } from "@/lib/api-client";
+import { displayFirstName } from "@/lib/names";
 import { formatCurrency, pct } from "@/lib/format";
-import type { Bill } from "@/lib/types";
+import type { Bill, Student } from "@/lib/types";
+
+/** Distinct recent donors across the student's bills (anonymous stays anonymous). */
+function recentDonors(student: Student) {
+  const contributions = student.bills
+    .flatMap((b) => b.contributions)
+    .filter((c) => c.status === "Confirmed")
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const seen = new Set<string>();
+  const out: { name?: string; anonymous?: boolean }[] = [];
+  for (const c of contributions) {
+    const key = c.anonymous ? `anon-${c.id}` : c.donorName;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(c.anonymous ? { anonymous: true } : { name: c.donorName });
+  }
+  return out;
+}
 
 const BIO_LIMIT = 300;
 
 export default function StudentProfilePage({ params }: { params: { slug: string } }) {
-  const student = getStudentBySlug(params.slug);
+  // Only verified profiles are public; anything else is a 404 from the API.
+  const [notFound, setNotFound] = useState(false);
+  const { data: student, error, loading, reload } = useApi(
+    () =>
+      publicApi.student(params.slug).catch((err) => {
+        if (err instanceof ApiError && err.status === 404) setNotFound(true);
+        throw err;
+      }),
+    [params.slug]
+  );
   const [selectedBillId, setSelectedBillId] = useState<string | undefined>();
   const [bioExpanded, setBioExpanded] = useState(false);
   const { toast } = useToast();
@@ -38,6 +67,39 @@ export default function StudentProfilePage({ params }: { params: { slug: string 
     () => student?.bills.filter((b) => b.status !== "Archived") ?? [],
     [student]
   );
+
+  if (loading) {
+    return (
+      <>
+        <Navbar />
+        <main className="min-h-screen bg-cream">
+          <div className="page-container space-y-6 py-10" aria-busy="true">
+            <div className="h-48 animate-pulse rounded-card bg-white/60 shadow-card" />
+            <div className="h-64 animate-pulse rounded-card bg-white/60 shadow-card" />
+          </div>
+        </main>
+        <Footer />
+      </>
+    );
+  }
+
+  if (!student && error && !notFound) {
+    return (
+      <>
+        <Navbar />
+        <main className="min-h-screen bg-cream">
+          <div className="page-container py-24">
+            <EmptyState
+              title="Couldn't load this profile"
+              description={error}
+              action={<Button variant="secondary" onClick={() => void reload()}>Try again</Button>}
+            />
+          </div>
+        </main>
+        <Footer />
+      </>
+    );
+  }
 
   if (!student) {
     return (
@@ -61,7 +123,8 @@ export default function StudentProfilePage({ params }: { params: { slug: string 
     );
   }
 
-  const firstName = student.name.split(" ")[1] ?? student.name.split(" ")[0];
+  const firstName = displayFirstName(student.name);
+  const donors = recentDonors(student);
   const totalNeeded = activeBills.reduce((s, b) => s + b.total, 0);
   const totalRaised = activeBills.reduce((s, b) => s + b.raised, 0);
   const overallPct = pct(totalRaised, totalNeeded);
@@ -116,14 +179,18 @@ export default function StudentProfilePage({ params }: { params: { slug: string 
             <div className="flex flex-col gap-6 md:flex-row md:items-start">
               {/* Photo */}
               <div className="relative h-40 w-40 shrink-0 overflow-hidden rounded-card shadow-card md:h-48 md:w-48">
-                <Image
-                  src={student.photo}
-                  alt={`Photo of ${student.name}, ${student.formationStage}`}
-                  fill
-                  sizes="(max-width: 768px) 160px, 192px"
-                  className="object-cover"
-                  priority
-                />
+                {student.photo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={mediaUrl(student.photo)}
+                    alt={`Photo of ${student.name}, ${student.formationStage}`}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-warm">
+                    <Avatar name={student.name} size="xl" />
+                  </div>
+                )}
               </div>
 
               {/* Identity */}
@@ -141,15 +208,21 @@ export default function StudentProfilePage({ params }: { params: { slug: string 
                   <p className="flex items-center gap-2">
                     <BookIcon size={15} className="text-gold-dark" /> {student.school}
                   </p>
-                  <p className="flex items-center gap-2">
-                    <UsersIcon size={15} className="text-gold-dark" /> {student.location}
-                  </p>
+                  {(student.location || student.country) && (
+                    <p className="flex items-center gap-2">
+                      <UsersIcon size={15} className="text-gold-dark" /> {student.location || student.country}
+                    </p>
+                  )}
                 </div>
 
                 <div className="mt-4 flex flex-wrap items-center gap-4">
                   <span className="inline-flex items-center gap-2 text-caption text-navy">
                     <UsersIcon size={16} className="text-gold" />
-                    <span className="font-semibold">{student.sponsorCount} people</span> are sponsoring {firstName}
+                    {student.sponsorCount > 0 ? (
+                      <><span className="font-semibold">{student.sponsorCount} {student.sponsorCount === 1 ? "person" : "people"}</span> {student.sponsorCount === 1 ? "is" : "are"} sponsoring {firstName}</>
+                    ) : (
+                      <>Be the first to sponsor {firstName}</>
+                    )}
                   </span>
                   <div className="flex items-center gap-2">
                     <Button variant="secondary" size="sm" onClick={share}>
@@ -172,7 +245,7 @@ export default function StudentProfilePage({ params }: { params: { slug: string 
                   </div>
                   <p className="mt-1 text-caption text-muted">
                     {remaining > 0 ? (
-                      <><span className="font-semibold text-navy">{formatCurrency(remaining)}</span> still needed across {activeBills.length} bills</>
+                      <><span className="font-semibold text-navy">{formatCurrency(remaining)}</span> still needed across {activeBills.length} bill{activeBills.length !== 1 ? "s" : ""}</>
                     ) : (
                       <span className="font-semibold text-success">Fully funded — thank you!</span>
                     )}
@@ -207,13 +280,19 @@ export default function StudentProfilePage({ params }: { params: { slug: string 
               <section>
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="font-display text-h2 text-navy">Bills &amp; Needs</h2>
-                  <span className="text-caption text-muted">{activeBills.length} bills</span>
+                  <span className="text-caption text-muted">{activeBills.length} bill{activeBills.length !== 1 ? "s" : ""}</span>
                 </div>
-                <div className="grid gap-5 sm:grid-cols-2">
-                  {activeBills.map((bill) => (
-                    <BillCard key={bill.id} bill={bill} onFund={fundBill} />
-                  ))}
-                </div>
+                {activeBills.length === 0 ? (
+                  <p className="rounded-card bg-white p-6 text-center text-caption text-muted shadow-card">
+                    {firstName} hasn&apos;t listed any needs yet.
+                  </p>
+                ) : (
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    {activeBills.map((bill) => (
+                      <BillCard key={bill.id} bill={bill} onFund={fundBill} />
+                    ))}
+                  </div>
+                )}
               </section>
             </div>
 
@@ -223,19 +302,15 @@ export default function StudentProfilePage({ params }: { params: { slug: string 
                 student={student}
                 selectedBillId={selectedBillId}
                 onSelectBill={setSelectedBillId}
+                onPaid={() => void reload()}
               />
 
               {/* Sponsor faces */}
-              {student.sponsorCount > 0 && (
+              {student.sponsorCount > 0 && donors.length > 0 && (
                 <div className="mt-4 flex items-center gap-3 rounded-card bg-white p-4 shadow-card">
                   <AvatarStack
-                    items={[
-                      { name: "Onyeka A." },
-                      { name: "Chukwuma O." },
-                      { anonymous: true },
-                      { name: "Grace Foundation" },
-                    ]}
-                    extra={Math.max(0, student.sponsorCount - 4)}
+                    items={donors.slice(0, 4)}
+                    extra={Math.max(0, student.sponsorCount - Math.min(4, donors.length))}
                     size="sm"
                   />
                   <p className="text-caption text-muted">
