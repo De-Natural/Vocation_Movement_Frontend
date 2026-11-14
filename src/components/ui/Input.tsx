@@ -1,11 +1,15 @@
+"use client";
+
 import {
   forwardRef,
+  useState,
   type InputHTMLAttributes,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
   type ReactNode,
 } from "react";
 import { cn } from "@/lib/utils";
+import { EyeIcon, EyeOffIcon } from "./icons";
 
 // PRD §2.4 Inputs — 10px radius, 1.5px solid #D4C5A9 border.
 // PRD §7 — always a visible label; descriptive errors.
@@ -53,8 +57,26 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, error, hint, required, id, className, ...props }, ref) => {
+  ({ label, error, hint, required, id, className, type, ...props }, ref) => {
     const fieldId = id || props.name;
+    // Password fields get a show/hide toggle (eye icon).
+    const isPassword = type === "password";
+    const [visible, setVisible] = useState(false);
+    const input = (
+      <input
+        ref={ref}
+        id={fieldId}
+        type={isPassword && visible ? "text" : type}
+        aria-invalid={!!error}
+        className={cn(
+          fieldBase,
+          error && "border-alert focus:border-alert focus:ring-alert/20",
+          isPassword && "pr-11",
+          className
+        )}
+        {...props}
+      />
+    );
     return (
       <div>
         {label && (
@@ -62,13 +84,23 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             {label}
           </Label>
         )}
-        <input
-          ref={ref}
-          id={fieldId}
-          aria-invalid={!!error}
-          className={cn(fieldBase, error && "border-alert focus:border-alert focus:ring-alert/20", className)}
-          {...props}
-        />
+        {isPassword ? (
+          <div className="relative">
+            {input}
+            <button
+              type="button"
+              onClick={() => setVisible((v) => !v)}
+              aria-label={visible ? "Hide password" : "Show password"}
+              aria-pressed={visible}
+              aria-controls={fieldId}
+              className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-input text-muted transition-colors hover:text-navy focus:outline-none focus-visible:text-gold"
+            >
+              {visible ? <EyeOffIcon size={18} /> : <EyeIcon size={18} />}
+            </button>
+          </div>
+        ) : (
+          input
+        )}
         <FieldError>{error}</FieldError>
         {!error && <Hint>{hint}</Hint>}
       </div>
@@ -154,22 +186,25 @@ export function Toggle({
   onChange,
   label,
   id,
+  disabled = false,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   label?: string;
   id?: string;
+  disabled?: boolean;
 }) {
   return (
-    <label htmlFor={id} className="flex cursor-pointer items-center gap-3">
+    <label htmlFor={id} className={cn("flex items-center gap-3", disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer")}>
       <button
         type="button"
         role="switch"
         aria-checked={checked}
         id={id}
+        disabled={disabled}
         onClick={() => onChange(!checked)}
         className={cn(
-          "relative inline-flex h-6 w-11 shrink-0 items-center rounded-progress transition-colors",
+          "relative inline-flex h-6 w-11 shrink-0 items-center rounded-progress transition-colors disabled:cursor-not-allowed",
           checked ? "bg-gold" : "bg-inputborder"
         )}
       >

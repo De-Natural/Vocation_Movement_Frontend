@@ -1,56 +1,80 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
+import { Select } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
-import {
-  MessageIcon,
-  ShieldIcon,
-  UploadIcon,
-  PlusIcon,
-} from "@/components/ui/icons";
-import { formatDate } from "@/lib/format";
+import { MessageIcon, ShieldIcon, PlusIcon } from "@/components/ui/icons";
+import { messagesApi, studentApi } from "@/lib/student-api";
+import { useApi, apiErrorMessage } from "@/lib/use-api";
+import { mediaUrl } from "@/lib/media";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { ThankYouMessage } from "@/lib/types";
+import type { Contribution } from "@/lib/types";
 
 const CHAR_LIMIT = 1000;
 
-/** Rich-text-ish composer (bold/italic/line breaks) with char limit + photo attach. */
+/** A gift the student can thank its sponsor for. */
+interface Recipient {
+  paymentId: string;
+  donorName: string;
+  anonymous: boolean;
+  label: string;
+}
+
+/** One entry per payment (a payment may be split across several bills). */
+function toRecipients(payments: Contribution[]): Recipient[] {
+  const byPayment = new Map<string, Recipient>();
+  for (const p of payments) {
+    if (!p.paymentId || p.status !== "Confirmed" || byPayment.has(p.paymentId)) continue;
+    byPayment.set(p.paymentId, {
+      paymentId: p.paymentId,
+      donorName: p.donorName,
+      anonymous: p.anonymous,
+      label: `${p.donorName} — ${formatCurrency(p.amount)} on ${formatDate(p.date)}`,
+    });
+  }
+  return Array.from(byPayment.values());
+}
+
+/** Thank-you composer (student → sponsor). */
 function Composer({
   open,
   onClose,
   onSend,
-  recipient,
-  anonymous,
+  recipients,
 }: {
   open: boolean;
   onClose: () => void;
-  onSend: (subject: string, body: string) => void;
-  recipient: string;
-  anonymous: boolean;
+  onSend: (paymentId: string, subject: string, body: string) => Promise<boolean>;
+  recipients: Recipient[];
 }) {
+  const [paymentId, setPaymentId] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [sending, setSending] = useState(false);
   const { toast } = useToast();
 
-  function apply(tag: "b" | "i") {
-    const wrap = tag === "b" ? "**" : "_";
-    setBody((t) => `${t}${wrap}text${wrap}`);
-  }
+  const selected = recipients.find((r) => r.paymentId === paymentId) ?? recipients[0];
 
-  function send() {
+  async function send() {
+    if (!selected) return;
     if (!body.trim()) {
       toast("Please write your message first.", "warning");
       return;
     }
-    onSend(subject || "Thank you", body);
-    setSubject("");
-    setBody("");
-    onClose();
+    setSending(true);
+    const ok = await onSend(selected.paymentId, subject.trim() || "Thank you", body.trim());
+    setSending(false);
+    if (ok) {
+      setSubject("");
+      setBody("");
+      onClose();
+    }
   }
 
   return (
@@ -60,119 +84,153 @@ function Composer({
       title="Compose Thank-You"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={send}>Send message</Button>
+          <Button variant="secondary" onClick={onClose} disabled={sending}>Cancel</Button>
+          <Button variant="primary" onClick={() => void send()} disabled={sending || !selected}>
+            {sending ? "Sending…" : "Send message"}
+          </Button>
         </>
       }
     >
-      <div className="space-y-4">
-        <div className="flex items-center gap-2 rounded-input bg-warm/60 p-3 text-caption">
-          <span className="text-muted">To:</span>
-          <span className="font-semibold text-navy">{recipient}</span>
-          {anonymous && (
+      {recipients.length === 0 ? (
+        <p className="text-body text-navy/80">
+          You can send a thank-you note once a sponsor has contributed to one of your bills.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          <Select
+            label="To"
+            value={selected?.paymentId ?? ""}
+            onChange={(e) => setPaymentId(e.target.value)}
+            options={recipients.map((r) => ({ value: r.paymentId, label: r.label }))}
+          />
+          {selected?.anonymous && (
             <Badge tone="navy" icon={<ShieldIcon size={12} />}>Via Admin — anonymity preserved</Badge>
           )}
-        </div>
 
-        <input
-          value={subject}
-          onChange={(e) => setSubject(e.target.value)}
-          placeholder="Subject"
-          className="w-full rounded-input border-[1.5px] border-inputborder bg-white px-4 py-2.5 text-body text-navy focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/25"
-        />
-
-        {/* Rich text toolbar */}
-        <div className="rounded-input border-[1.5px] border-inputborder bg-white">
-          <div className="flex items-center gap-1 border-b border-inputborder/50 p-2">
-            <button onClick={() => apply("b")} className="h-8 w-8 rounded font-bold text-navy hover:bg-warm" aria-label="Bold">B</button>
-            <button onClick={() => apply("i")} className="h-8 w-8 rounded italic text-navy hover:bg-warm" aria-label="Italic">I</button>
-            <div className="mx-1 h-5 w-px bg-inputborder/50" />
-            <button className="flex items-center gap-1 rounded px-2 py-1 text-caption text-muted hover:bg-warm" aria-label="Attach photo">
-              <UploadIcon size={16} /> Attach photo
-            </button>
-          </div>
-          <textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value.slice(0, CHAR_LIMIT))}
-            placeholder="Write your heartfelt thanks…"
-            rows={7}
-            className="w-full resize-y bg-transparent px-4 py-3 text-body text-navy focus:outline-none"
+          <input
+            value={subject}
+            onChange={(e) => setSubject(e.target.value.slice(0, 160))}
+            placeholder="Subject (optional)"
+            aria-label="Subject"
+            className="w-full rounded-input border-[1.5px] border-inputborder bg-white px-4 py-2.5 text-body text-navy focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/25"
           />
-          <div className="flex justify-end px-4 pb-2 text-label text-muted">
-            {body.length}/{CHAR_LIMIT}
+
+          <div className="rounded-input border-[1.5px] border-inputborder bg-white">
+            <textarea
+              value={body}
+              onChange={(e) => setBody(e.target.value.slice(0, CHAR_LIMIT))}
+              placeholder="Write your heartfelt thanks…"
+              aria-label="Message"
+              rows={7}
+              className="w-full resize-y bg-transparent px-4 py-3 text-body text-navy focus:outline-none"
+            />
+            <div className="flex justify-end px-4 pb-2 text-label text-muted">
+              {body.length}/{CHAR_LIMIT}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </Modal>
   );
 }
 
-export function MessagesView({
-  initialMessages,
-  perspective,
-}: {
-  initialMessages: ThankYouMessage[];
-  perspective: "student" | "sponsor";
-}) {
-  const [msgs, setMsgs] = useState(initialMessages);
-  const [activeId, setActiveId] = useState<string | null>(initialMessages[0]?.id ?? null);
+export function MessagesView({ perspective }: { perspective: "student" | "sponsor" }) {
+  const { data, error, loading, reload, setData } = useApi(() => messagesApi.list());
+  // Students address thank-yous by gift, so they need their received payments.
+  const { data: payments } = useApi(
+    () => (perspective === "student" ? studentApi.payments() : Promise.resolve([] as Contribution[])),
+    [perspective]
+  );
+  const recipients = useMemo(() => toRecipients(payments ?? []), [payments]);
+
+  const msgs = useMemo(() => data ?? [], [data]);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
   const [reply, setReply] = useState("");
+  const [replying, setReplying] = useState(false);
   const { toast } = useToast();
 
-  const active = msgs.find((m) => m.id === activeId) ?? null;
+  const active = msgs.find((m) => m.id === activeId) ?? msgs[0] ?? null;
 
   function openMessage(id: string) {
     setActiveId(id);
-    setMsgs((ms) => ms.map((m) => (m.id === id ? { ...m, read: true } : m)));
+    const m = msgs.find((x) => x.id === id);
+    if (m && !m.read) {
+      setData((list) => list && list.map((x) => (x.id === id ? { ...x, read: true } : x)));
+      messagesApi.markRead(id).catch(() => undefined);
+    }
   }
 
-  function sendThankYou(subject: string, body: string) {
-    const newMsg: ThankYouMessage = {
-      id: `msg-${msgs.length + 1}`,
-      studentId: "stu-1",
-      studentName: "Brother Emeka Okonkwo",
-      studentPhoto: initialMessages[0]?.studentPhoto ?? "",
-      sponsorName: "Mrs. Onyeka A.",
-      anonymousDonor: false,
-      subject,
-      body,
-      date: "2026-08-18",
-      read: true,
-      replies: [],
-    };
-    setMsgs((ms) => [newMsg, ...ms]);
-    setActiveId(newMsg.id);
-    toast("Thank-you message sent. Your sponsor will be notified by email.", "success");
+  async function sendThankYou(paymentId: string, subject: string, body: string) {
+    try {
+      const msg = await messagesApi.send({ paymentId, subject, body });
+      setData((list) => [msg, ...(list ?? [])]);
+      setActiveId(msg.id);
+      toast("Thank-you message sent. Your sponsor will be notified by email.", "success");
+      return true;
+    } catch (err) {
+      toast(apiErrorMessage(err, "Your message could not be sent."), "error");
+      return false;
+    }
   }
 
-  function sendReply() {
+  async function sendReply() {
     if (!active || !reply.trim()) return;
-    setMsgs((ms) =>
-      ms.map((m) =>
-        m.id === active.id
-          ? {
-              ...m,
-              replies: [
-                ...m.replies,
-                { id: `r-${Date.now()}`, from: perspective === "student" ? "student" : "sponsor", body: reply, date: "2026-08-18" },
-              ],
-            }
-          : m
-      )
+    setReplying(true);
+    try {
+      const updated = await messagesApi.reply(active.id, reply.trim());
+      setData((list) => list && list.map((m) => (m.id === updated.id ? updated : m)));
+      setReply("");
+      toast("Reply sent.", "success");
+    } catch (err) {
+      toast(apiErrorMessage(err, "Your reply could not be sent."), "error");
+    } finally {
+      setReplying(false);
+    }
+  }
+
+  const composer = (
+    <Composer
+      open={composerOpen}
+      onClose={() => setComposerOpen(false)}
+      onSend={sendThankYou}
+      recipients={recipients}
+    />
+  );
+
+  if (loading) {
+    return <div className="h-96 animate-pulse rounded-card bg-white/60 shadow-card" />;
+  }
+  if (error) {
+    return (
+      <EmptyState
+        icon={<MessageIcon size={28} />}
+        title="Couldn't load messages"
+        description={error}
+        action={<Button variant="secondary" onClick={() => void reload()}>Try again</Button>}
+      />
     );
-    setReply("");
-    toast("Reply sent.", "success");
   }
 
   if (msgs.length === 0) {
     return (
-      <EmptyState
-        icon={<MessageIcon size={28} />}
-        title="No messages yet"
-        description={perspective === "student" ? "Send a thank-you note to a sponsor from your Payment History." : "Messages from students you've sponsored will appear here."}
-        action={perspective === "student" ? <Button onClick={() => setComposerOpen(true)}><PlusIcon size={16} /> Compose Thank-You</Button> : undefined}
-      />
+      <>
+        <EmptyState
+          icon={<MessageIcon size={28} />}
+          title="No messages yet"
+          description={
+            perspective === "student"
+              ? "Send a thank-you note to a sponsor who has supported you."
+              : "Messages from students you've sponsored will appear here."
+          }
+          action={
+            perspective === "student" ? (
+              <Button onClick={() => setComposerOpen(true)}><PlusIcon size={16} /> Compose Thank-You</Button>
+            ) : undefined
+          }
+        />
+        {composer}
+      </>
     );
   }
 
@@ -201,7 +259,7 @@ export function MessagesView({
                   onClick={() => openMessage(m.id)}
                   className={cn(
                     "flex w-full items-start gap-3 p-4 text-left transition-colors hover:bg-warm/50",
-                    activeId === m.id && "bg-gold/8"
+                    active?.id === m.id && "bg-gold/8"
                   )}
                 >
                   <Avatar name={who} src={photo} anonymous={m.anonymousDonor && perspective === "student"} size="sm" />
@@ -251,7 +309,12 @@ export function MessagesView({
                 <div className="rounded-card bg-warm/50 p-4">
                   <p className="whitespace-pre-line text-body text-navy">{active.body}</p>
                   {active.photoAttachment && (
-                    <div className="mt-3 rounded-input bg-white p-2 text-caption text-muted">📎 Photo update attached</div>
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={mediaUrl(active.photoAttachment)}
+                      alt="Photo attached to this message"
+                      className="mt-3 max-h-72 rounded-input object-contain"
+                    />
                   )}
                 </div>
                 {active.replies.map((r) => (
@@ -265,7 +328,7 @@ export function MessagesView({
                     <p className="mb-1 text-label font-semibold text-muted">
                       {r.from === "sponsor" ? "Sponsor" : "Student"} · {formatDate(r.date)}
                     </p>
-                    <p className="text-body text-navy">{r.body}</p>
+                    <p className="whitespace-pre-line text-body text-navy">{r.body}</p>
                   </div>
                 ))}
               </div>
@@ -275,12 +338,15 @@ export function MessagesView({
                 <div className="flex items-end gap-2">
                   <textarea
                     value={reply}
-                    onChange={(e) => setReply(e.target.value)}
+                    onChange={(e) => setReply(e.target.value.slice(0, CHAR_LIMIT))}
                     placeholder={perspective === "sponsor" ? "Write a reply (optional)…" : "Continue the conversation…"}
+                    aria-label="Reply"
                     rows={2}
                     className="flex-1 resize-none rounded-input border-[1.5px] border-inputborder bg-white px-4 py-2.5 text-body text-navy focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/25"
                   />
-                  <Button variant="primary" onClick={sendReply}>Send</Button>
+                  <Button variant="primary" onClick={() => void sendReply()} disabled={replying || !reply.trim()}>
+                    {replying ? "Sending…" : "Send"}
+                  </Button>
                 </div>
               </div>
             </div>
@@ -292,13 +358,7 @@ export function MessagesView({
         </div>
       </div>
 
-      <Composer
-        open={composerOpen}
-        onClose={() => setComposerOpen(false)}
-        onSend={sendThankYou}
-        recipient="Mrs. Onyeka A."
-        anonymous={false}
-      />
+      {composer}
     </>
   );
 }

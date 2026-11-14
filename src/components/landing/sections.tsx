@@ -14,12 +14,16 @@ import {
   ArrowRightIcon,
   SparkleIcon,
 } from "@/components/ui/icons";
-import {
-  featuredStudents,
-  platformStats,
-  testimonials,
-  heroImage,
-} from "@/lib/mock-data";
+import { heroImage } from "@/lib/site-images";
+import { publicApi } from "@/lib/public-api";
+import { useApi } from "@/lib/use-api";
+import { SkeletonGrid } from "@/components/ui/Skeleton";
+
+/**
+ * Testimonials shown in the "Voices of Gratitude" section. Add real, consented
+ * quotes here; the section is hidden while the list is empty.
+ */
+const testimonials: { name: string; congregation: string; quote: string; photo?: string }[] = [];
 
 /* ── Hero (PRD §4.1) ── */
 export function Hero() {
@@ -134,6 +138,11 @@ export function HowItWorks() {
 
 /* ── Featured Students (PRD §4.1 — masonry of 6) ── */
 export function FeaturedStudents() {
+  // Six verified students, most urgent need first.
+  const { data, loading } = useApi(() => publicApi.students({ perPage: 6, sort: "urgent" }));
+  const featured = data?.data ?? [];
+  if (!loading && featured.length === 0) return null;
+
   return (
     <section className="bg-warm/50 py-section">
       <div className="page-container">
@@ -152,10 +161,11 @@ export function FeaturedStudents() {
         </div>
 
         <div className="mt-10 masonry columns-1 sm:columns-2 lg:columns-3">
-          {featuredStudents.map((s) => (
+          {featured.map((s) => (
             <StudentCard key={s.id} student={s} />
           ))}
         </div>
+        {loading && <SkeletonGrid count={3} />}
       </div>
     </section>
   );
@@ -163,6 +173,10 @@ export function FeaturedStudents() {
 
 /* ── Impact Numbers (PRD §4.1 — animated counters) ── */
 export function ImpactNumbers() {
+  const { data: platformStats } = useApi(() => publicApi.stats());
+  // Hide the section until there is real impact to show.
+  if (!platformStats || (platformStats.studentsSupported === 0 && platformStats.fundsRaised === 0)) return null;
+
   const stats = [
     { label: "Students Supported", value: platformStats.studentsSupported, prefix: "", suffix: "" },
     { label: "Total Funds Raised", value: platformStats.fundsRaised, prefix: "$", suffix: "", compact: true },
@@ -196,6 +210,7 @@ export function ImpactNumbers() {
 
 /* ── Testimonials (PRD §4.1) ── */
 export function Testimonials() {
+  if (testimonials.length === 0) return null;
   return (
     <section className="page-container py-section">
       <div className="mx-auto mb-12 max-w-2xl text-center">
@@ -224,9 +239,11 @@ export function Testimonials() {
               &ldquo;{t.quote}&rdquo;
             </blockquote>
             <figcaption className="mt-5 flex items-center gap-3 border-t border-inputborder/40 pt-5">
-              <div className="relative h-11 w-11 overflow-hidden rounded-full">
-                <Image src={t.photo} alt={`Photo of ${t.name}`} fill sizes="44px" className="object-cover" />
-              </div>
+              {t.photo && (
+                <div className="relative h-11 w-11 overflow-hidden rounded-full">
+                  <Image src={t.photo} alt={`Photo of ${t.name}`} fill sizes="44px" className="object-cover" />
+                </div>
+              )}
               <div>
                 <p className="text-caption font-semibold text-navy">{t.name}</p>
                 <p className="text-label text-muted">{t.congregation}</p>

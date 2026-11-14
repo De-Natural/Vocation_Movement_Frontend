@@ -8,39 +8,43 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
 import { useSession } from "@/lib/store";
-import { apiClient } from "@/lib/api-client";
-import { SUPERADMIN_DEMO_EMAIL } from "@/lib/platform-config";
+import { apiClient, ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
-import type { UserRole } from "@/lib/types";
 
-const roles: { value: UserRole; label: string; name: string; dest: string }[] = [
-  { value: "student", label: "Student", name: "Brother Emeka Okonkwo", dest: "/dashboard/student" },
-  { value: "sponsor", label: "Sponsor", name: "Mrs. Onyeka Adeleke", dest: "/dashboard/sponsor" },
-  { value: "admin", label: "Admin", name: "Fr. Administrator", dest: "/dashboard/admin" },
+type SignInRole = "student" | "sponsor" | "admin";
+
+const roles: { value: SignInRole; label: string }[] = [
+  { value: "student", label: "Student" },
+  { value: "sponsor", label: "Sponsor" },
+  { value: "admin", label: "Admin" },
 ];
 
+/** Only follow same-site relative redirects (blocks //evil.com open redirects). */
+function safeRedirect(path: string | null): string | null {
+  return path && path.startsWith("/") && !path.startsWith("//") ? path : null;
+}
+
 function SignInForm() {
-  const [role, setRole] = useState<UserRole>("sponsor");
-  const [email, setEmail] = useState("demo@vocation.org");
-  const [password, setPassword] = useState("password");
+  const [role, setRole] = useState<SignInRole>("sponsor");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectParam = searchParams.get("redirect");
+  const redirectParam = safeRedirect(searchParams.get("redirect"));
   const { toast } = useToast();
   const setSession = useSession((s) => s.setSession);
-  const setSessionRole = useSession((s) => s.setRole);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
 
     try {
-      // 1. Attempt authentication with the real backend endpoint
       const response = await apiClient.auth.login({
         email: email.trim(),
         password,
+        role,
       });
 
       setSession({
@@ -53,37 +57,14 @@ function SignInForm() {
 
       toast(`Welcome back${response.name ? `, ${response.name}` : ""}!`, "success");
 
-      const targetDest =
-        redirectParam || (response.role === "admin" ? "/dashboard/admin" : `/dashboard/${response.role}`);
-      router.push(targetDest);
+      router.push(redirectParam || `/dashboard/${response.role}`);
       return;
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "";
-
-      // Check if user has not verified their email yet
-      if (
-        errorMessage.toLowerCase().includes("verify") ||
-        errorMessage.toLowerCase().includes("verification")
-      ) {
-        toast("Please verify your email address before signing in.", "error");
-        router.push("/verify-email");
-        return;
+      if (err instanceof ApiError && err.status === 0) {
+        toast("Can't reach the server. Please check your connection and try again.", "error");
+      } else {
+        toast(err instanceof Error && err.message ? err.message : "Sign in failed.", "error");
       }
-
-      // If backend is not yet running or network fails, provide graceful fallback for demo
-      console.warn("Backend login attempt failed, falling back to simulated demo session:", errorMessage);
-
-      if (role === "admin" && email.trim().toLowerCase() === SUPERADMIN_DEMO_EMAIL) {
-        setSessionRole("superadmin", "Msgr. Raphael Eze (Super Admin)");
-        toast("Welcome back, Msgr. Eze! (Demo)", "success");
-        router.push(redirectParam || "/dashboard/superadmin");
-        return;
-      }
-
-      const r = roles.find((x) => x.value === role)!;
-      setSessionRole(r.value, r.name);
-      toast(`Welcome back, ${r.name.split(" ").slice(-1)[0]}!`, "success");
-      router.push(redirectParam || r.dest);
     } finally {
       setLoading(false);
     }

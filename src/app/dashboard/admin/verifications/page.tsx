@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { PageTitle } from "@/components/dashboard/widgets";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
@@ -10,10 +10,11 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { VerificationBadge } from "@/components/domain/StatusBadges";
 import { useToast } from "@/components/ui/Toast";
 import { CheckIcon, XIcon, InfoIcon, FileIcon, ShieldIcon } from "@/components/ui/icons";
-import { students as seedStudents } from "@/lib/mock-data";
+import { adminApi, type AdminStudent } from "@/lib/admin-api";
+import { ApiError } from "@/lib/api-client";
+import { mediaUrl } from "@/lib/media";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { Student, VerificationStatus } from "@/lib/types";
 
 type Filter = "Pending Verification" | "Verified" | "all";
 
@@ -25,50 +26,87 @@ const TABS: { key: Filter; label: string }[] = [
 
 type ActionKind = "reject" | "request" | "suspend";
 
+const errorMessage = (err: unknown, fallback: string) =>
+  err instanceof ApiError && err.status === 0
+    ? "Can't reach the server. Please try again."
+    : err instanceof Error
+      ? err.message
+      : fallback;
+
 export default function VerificationsPage() {
-  const [roster, setRoster] = useState<Student[]>(seedStudents);
+  // The full roster ("all") is fetched once; tabs filter it client-side so counts stay in sync.
+  const [roster, setRoster] = useState<AdminStudent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("Pending Verification");
-  const [action, setAction] = useState<{ kind: ActionKind; student: Student } | null>(null);
+  const [action, setAction] = useState<{ kind: ActionKind; student: AdminStudent } | null>(null);
   const [reason, setReason] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
   const { toast } = useToast();
+
+  const load = useCallback(async () => {
+    setLoadError(null);
+    try {
+      setRoster(await adminApi.verifications("all"));
+    } catch (err) {
+      setLoadError(errorMessage(err, "Couldn't load the verification queue."));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const visible = useMemo(() => {
     if (filter === "all") return roster;
     return roster.filter((s) => s.verification === filter);
   }, [roster, filter]);
 
-  function setStatus(id: string, status: VerificationStatus) {
-    setRoster((list) => list.map((s) => (s.id === id ? { ...s, verification: status } : s)));
+  /** Run a backend action, then re-fetch so the list reflects the stored state. */
+  async function run(student: AdminStudent, fn: () => Promise<unknown>, success: string) {
+    setBusyId(student.id);
+    try {
+      await fn();
+      toast(success, "success");
+      await load();
+      return true;
+    } catch (err) {
+      toast(errorMessage(err, "Action failed. Please try again."), "error");
+      return false;
+    } finally {
+      setBusyId(null);
+    }
   }
 
-  function approve(s: Student) {
-    setStatus(s.id, "Verified");
-    toast(`${s.name} has been verified and is now visible to sponsors.`, "success");
+  function approve(s: AdminStudent) {
+    void run(s, () => adminApi.verify(s.id), `${s.name} has been verified and is now visible to sponsors.`);
   }
 
-  function openAction(kind: ActionKind, student: Student) {
+  function openAction(kind: ActionKind, student: AdminStudent) {
     setAction({ kind, student });
     setReason("");
   }
 
-  function confirmAction() {
+  async function confirmAction() {
     if (!action) return;
     const { kind, student } = action;
-    if (!reason.trim()) {
-      toast("Please provide a reason — it will be sent to the student.", "warning");
+    const text = reason.trim();
+    if (text.length < 3) {
+      toast("Please provide a reason (at least 3 characters) — it will be sent to the student.", "warning");
       return;
     }
-    if (kind === "reject") {
-      setStatus(student.id, "Rejected");
-      toast(`${student.name}'s profile was rejected. They have been notified.`, "info");
-    } else if (kind === "suspend") {
-      setStatus(student.id, "Suspended");
-      toast(`${student.name}'s profile has been suspended.`, "info");
-    } else {
-      toast(`Information request sent to ${student.name}.`, "info");
+    const ok =
+      kind === "reject"
+        ? await run(student, () => adminApi.reject(student.id, text), `${student.name}'s profile was rejected. They have been notified.`)
+        : kind === "suspend"
+          ? await run(student, () => adminApi.suspend(student.userId, text), `${student.name}'s profile has been suspended.`)
+          : await run(student, () => adminApi.requestInfo(student.id, text), `Information request sent to ${student.name}.`);
+    if (ok) {
+      setAction(null);
+      setReason("");
     }
-    setAction(null);
-    setReason("");
   }
 
   const actionCopy: Record<ActionKind, { title: string; label: string; hint: string; danger?: boolean }> = {
@@ -98,13 +136,26 @@ export default function VerificationsPage() {
                 filter === t.key ? "bg-white text-navy shadow-sm" : "text-muted hover:text-navy"
               )}
             >
-              {t.label} <span className="ml-1 text-muted">({count})</span>
+              {t.label} {!loading && <span className="ml-1 text-muted">({count})</span>}
             </button>
           );
         })}
       </div>
 
-      {visible.length === 0 ? (
+      {loading ? (
+        <div className="space-y-4" aria-busy="true">
+          {[0, 1].map((i) => (
+            <div key={i} className="h-40 animate-pulse rounded-card bg-white shadow-card" />
+          ))}
+        </div>
+      ) : loadError ? (
+        <EmptyState
+          icon={<ShieldIcon size={28} />}
+          title="Couldn't load profiles"
+          description={loadError}
+          action={<Button variant="secondary" onClick={() => { setLoading(true); void load(); }}>Try again</Button>}
+        />
+      ) : visible.length === 0 ? (
         <EmptyState
           icon={<ShieldIcon size={28} />}
           title="Nothing to review"
@@ -123,21 +174,37 @@ export default function VerificationsPage() {
                       <h3 className="font-display text-h3 text-navy">{s.name}</h3>
                       <VerificationBadge status={s.verification} />
                     </div>
-                    <p className="mt-1 text-caption text-muted">{s.formationStage} · {s.congregation}</p>
-                    <p className="text-caption text-muted">{s.school} · {s.location}</p>
+                    <p className="mt-1 text-caption text-muted">{s.email}</p>
+                    <p className="text-caption text-muted">{s.formationStage} · {s.congregation}</p>
+                    <p className="text-caption text-muted">
+                      {[s.school, s.location || s.country].filter(Boolean).join(" · ")}
+                    </p>
                     <p className="mt-1 text-label text-muted">Submitted {formatDate(s.createdAt)}</p>
 
-                    {/* Mock supporting documents */}
+                    {s.biography && (
+                      <p className="mt-3 line-clamp-3 text-caption text-navy/80">{s.biography}</p>
+                    )}
+
+                    {/* Supporting documents */}
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {["Letter of recommendation", "Formation ID", "Bill statement"].map((doc) => (
-                        <button
-                          key={doc}
-                          onClick={() => toast(`Opening “${doc}” (demo).`, "info")}
-                          className="inline-flex items-center gap-1.5 rounded-pill border border-inputborder bg-warm/40 px-3 py-1 text-label font-medium text-navy hover:border-gold"
-                        >
-                          <FileIcon size={13} /> {doc}
-                        </button>
-                      ))}
+                      {s.documents.length === 0 ? (
+                        <span className="text-label text-alert">No documents uploaded</span>
+                      ) : (
+                        s.documents.map((doc) => (
+                          <a
+                            key={doc.id}
+                            href={mediaUrl(doc.url)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 rounded-pill border border-inputborder bg-warm/40 px-3 py-1 text-label font-medium text-navy hover:border-gold"
+                          >
+                            <FileIcon size={13} /> {doc.label}
+                            <span className="text-muted">
+                              ({doc.mimeType === "application/pdf" ? "PDF" : "Image"})
+                            </span>
+                          </a>
+                        ))
+                      )}
                     </div>
                   </div>
                 </div>
@@ -147,24 +214,24 @@ export default function VerificationsPage() {
               <div className="mt-4 flex flex-wrap gap-2 border-t border-inputborder/40 pt-4">
                 {s.verification === "Pending Verification" && (
                   <>
-                    <Button variant="primary" size="sm" onClick={() => approve(s)}>
-                      <CheckIcon size={15} /> Approve
+                    <Button variant="primary" size="sm" onClick={() => approve(s)} disabled={!!busyId}>
+                      <CheckIcon size={15} /> {busyId === s.id ? "Approving…" : "Approve"}
                     </Button>
-                    <Button variant="secondary" size="sm" onClick={() => openAction("request", s)}>
+                    <Button variant="secondary" size="sm" onClick={() => openAction("request", s)} disabled={!!busyId}>
                       <InfoIcon size={15} /> Request Info
                     </Button>
-                    <Button variant="danger" size="sm" onClick={() => openAction("reject", s)}>
+                    <Button variant="danger" size="sm" onClick={() => openAction("reject", s)} disabled={!!busyId}>
                       <XIcon size={15} /> Reject
                     </Button>
                   </>
                 )}
                 {s.verification === "Verified" && (
-                  <Button variant="danger" size="sm" onClick={() => openAction("suspend", s)}>
+                  <Button variant="danger" size="sm" onClick={() => openAction("suspend", s)} disabled={!!busyId}>
                     <ShieldIcon size={15} /> Flag &amp; Suspend
                   </Button>
                 )}
                 {(s.verification === "Rejected" || s.verification === "Suspended") && (
-                  <Button variant="secondary" size="sm" onClick={() => approve(s)}>
+                  <Button variant="secondary" size="sm" onClick={() => approve(s)} disabled={!!busyId}>
                     <CheckIcon size={15} /> Reinstate &amp; Verify
                   </Button>
                 )}
@@ -182,9 +249,13 @@ export default function VerificationsPage() {
         footer={
           action && (
             <>
-              <Button variant="secondary" onClick={() => setAction(null)}>Cancel</Button>
-              <Button variant={actionCopy[action.kind].danger ? "danger" : "primary"} onClick={confirmAction}>
-                {actionCopy[action.kind].label}
+              <Button variant="secondary" onClick={() => setAction(null)} disabled={!!busyId}>Cancel</Button>
+              <Button
+                variant={actionCopy[action.kind].danger ? "danger" : "primary"}
+                onClick={() => void confirmAction()}
+                disabled={!!busyId}
+              >
+                {busyId ? "Sending…" : actionCopy[action.kind].label}
               </Button>
             </>
           )

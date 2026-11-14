@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Input, Textarea } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { CheckCircleIcon, MessageIcon } from "@/components/ui/icons";
-import { useInquiries } from "@/lib/inquiries-store";
+import { useToast } from "@/components/ui/Toast";
+import { apiClient, ApiError } from "@/lib/api-client";
 
 interface FormState {
   name: string;
@@ -31,31 +32,50 @@ function validate(values: FormState): Errors {
 }
 
 export function ContactForm() {
-  const add = useInquiries((s) => s.add);
+  const { toast } = useToast();
   const [values, setValues] = useState<FormState>(EMPTY);
   const [errors, setErrors] = useState<Errors>({});
   const [submitted, setSubmitted] = useState(false);
+  const [sending, setSending] = useState(false);
 
   const set = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setValues((v) => ({ ...v, [key]: e.target.value }));
     if (errors[key]) setErrors((prev) => ({ ...prev, [key]: undefined }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (sending) return;
     const found = validate(values);
     if (Object.keys(found).length > 0) {
       setErrors(found);
       return;
     }
-    add({
-      name: values.name.trim(),
-      email: values.email.trim(),
-      phone: values.phone.trim(),
-      message: values.message.trim(),
-    });
-    setValues(EMPTY);
-    setSubmitted(true);
+    setSending(true);
+    try {
+      await apiClient.post(
+        "/api/inquiries",
+        {
+          name: values.name.trim(),
+          email: values.email.trim(),
+          phone: values.phone.trim(),
+          message: values.message.trim(),
+        },
+        { skipAuth: true }
+      );
+      setValues(EMPTY);
+      setSubmitted(true);
+    } catch (err) {
+      const message =
+        err instanceof ApiError && err.status === 0
+          ? "Can't reach the server. Please try again."
+          : err instanceof Error
+            ? err.message
+            : "Your message could not be sent.";
+      toast(message, "error");
+    } finally {
+      setSending(false);
+    }
   };
 
   if (submitted) {
@@ -140,8 +160,8 @@ export function ContactForm() {
             error={errors.message}
           />
         </div>
-        <Button type="submit" fullWidth className="mt-6">
-          Send message
+        <Button type="submit" fullWidth className="mt-6" disabled={sending}>
+          {sending ? "Sending…" : "Send message"}
         </Button>
         <p className="mt-3 text-center text-label text-muted">
           Your details are sent to our team so we can respond to your enquiry.

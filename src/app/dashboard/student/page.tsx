@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { StatTile, SectionHeader } from "@/components/dashboard/widgets";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -10,6 +9,7 @@ import { ProgressRing } from "@/components/ui/ProgressRing";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Button } from "@/components/ui/Button";
 import { CountUp } from "@/components/ui/CountUp";
+import { EmptyState } from "@/components/ui/EmptyState";
 import {
   WalletIcon,
   UsersIcon,
@@ -17,31 +17,87 @@ import {
   ArrowRightIcon,
   CalendarIcon,
 } from "@/components/ui/icons";
-import { currentStudent, messages, receivedPayments } from "@/lib/mock-data";
+import { studentApi } from "@/lib/student-api";
+import { useApi } from "@/lib/use-api";
+import { mediaUrl } from "@/lib/media";
 import { formatCurrency, formatDate, pct } from "@/lib/format";
+import type { Contribution, Student } from "@/lib/types";
+
+/** Concrete, data-driven suggestions for raising profile completion. */
+function missingItems(s: Student): string[] {
+  const out: string[] = [];
+  if (!s.photo) out.push("Upload a profile photo");
+  if (s.biography.trim().length < 100) out.push("Complete your biography (100+ characters)");
+  if (!s.location) out.push("Add your location");
+  if (!s.yearOfFormation || !s.expectedYear) out.push("Add your formation years");
+  if (s.bills.filter((b) => b.status !== "Archived").length === 0) out.push("Add at least one bill");
+  return out;
+}
+
+/** Distinct recent donors (anonymous gifts stay anonymous). */
+function recentSponsors(payments: Contribution[]) {
+  const seen = new Set<string>();
+  const out: { name?: string; anonymous?: boolean }[] = [];
+  for (const p of payments) {
+    const key = p.anonymous ? `anon-${p.id}` : p.donorName;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(p.anonymous ? { anonymous: true } : { name: p.donorName });
+  }
+  return out;
+}
 
 export default function StudentDashboard() {
-  const student = currentStudent;
-  const totalNeeded = student.bills.reduce((s, b) => s + b.total, 0);
-  const totalRaised = student.bills.reduce((s, b) => s + b.raised, 0);
-  const overviewPct = pct(totalRaised, totalNeeded);
+  const { data, error, loading, reload } = useApi(() => studentApi.dashboard());
 
-  const pendingBills = student.bills
-    .filter((b) => b.status !== "Fully Funded" && b.status !== "Archived")
-    .sort((a, b) => pct(a.raised, a.total) - pct(b.raised, b.total));
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-6xl space-y-6" aria-busy="true">
+        <div className="h-40 animate-pulse rounded-card bg-white/60 shadow-card" />
+        <div className="grid gap-5 sm:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-28 animate-pulse rounded-card bg-white/60 shadow-card" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (error || !data) {
+    return (
+      <EmptyState
+        icon={<WalletIcon size={28} />}
+        title="Couldn't load your dashboard"
+        description={error ?? "Please try again."}
+        action={<Button variant="secondary" onClick={() => void reload()}>Try again</Button>}
+      />
+    );
+  }
 
-  const recent = receivedPayments.slice(0, 5);
-  const unread = messages.filter((m) => !m.read).length;
-  const anonSponsors = 4;
+  const { student, kpis, pendingBills, recentPayments } = data;
+  const sponsors = recentSponsors(recentPayments);
+  const missing = missingItems(student);
+  const photo = mediaUrl(student.photo);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
+      {student.verification !== "Verified" && (
+        <div role="status" className="rounded-card border border-gold/40 bg-gold/10 p-4 text-caption text-navy">
+          <span className="font-semibold">Profile status: {student.verification}.</span>{" "}
+          {student.verification === "Pending Verification"
+            ? "An administrator is reviewing your profile. Sponsors will see it once it is verified."
+            : "Your profile is not visible to sponsors. Check your email for details from the admin team."}
+        </div>
+      )}
+
       {/* Welcome Banner */}
       <Card className="overflow-hidden">
         <div className="relative bg-navy">
-          <div className="absolute inset-0 opacity-20">
-            <Image src={student.photo} alt="" fill sizes="100vw" className="object-cover" />
-          </div>
+          {photo && (
+            <div className="absolute inset-0 opacity-20">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={photo} alt="" className="h-full w-full object-cover" />
+            </div>
+          )}
           <div className="relative flex flex-col items-start gap-5 p-6 sm:flex-row sm:items-center">
             <Avatar name={student.name} src={student.photo} size="xl" ring />
             <div className="flex-1">
@@ -57,7 +113,7 @@ export default function StudentDashboard() {
             <div className="w-full border-t border-white/15 pt-4 sm:w-auto sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0">
               <p className="text-caption text-cream/70">Total received</p>
               <p className="font-display text-h1 text-gold">
-                <CountUp value={totalRaised} prefix="$" />
+                <CountUp value={kpis.totalRaised} prefix="$" />
               </p>
             </div>
           </div>
@@ -68,7 +124,7 @@ export default function StudentDashboard() {
       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         <StatTile
           label="Total Funds Received"
-          value={totalRaised}
+          value={kpis.totalRaised}
           prefix="$"
           icon={<WalletIcon size={18} />}
           tone="success"
@@ -76,18 +132,18 @@ export default function StudentDashboard() {
         />
         <StatTile
           label="Active Sponsors"
-          value={student.sponsorCount}
+          value={kpis.sponsorCount}
           icon={<UsersIcon size={18} />}
           tone="accent"
-          hint={`Including ${anonSponsors} anonymous`}
+          hint={kpis.anonymousSponsors ? `Including ${kpis.anonymousSponsors} anonymous` : undefined}
         />
         <StatTile
           label="Unread Messages"
-          value={unread}
+          value={kpis.unreadMessages}
           icon={<MessageIcon size={18} />}
           tone="gold"
           animate={false}
-          hint="Thank-you drafts & replies"
+          hint="Thank-you notes & replies"
         />
       </div>
 
@@ -97,20 +153,20 @@ export default function StudentDashboard() {
           <div className="flex flex-col items-center p-6">
             <SectionHeader title="Bills Overview" />
             <ProgressRing
-              value={overviewPct}
+              value={kpis.overviewPct}
               size={160}
               stroke={16}
-              label={`${overviewPct}%`}
+              label={`${kpis.overviewPct}%`}
               sublabel="funded"
             />
             <div className="mt-5 grid w-full grid-cols-2 gap-3 text-center">
               <div className="rounded-input bg-warm/60 p-3">
                 <p className="text-caption text-muted">Needed</p>
-                <p className="font-display text-h3 text-navy">{formatCurrency(totalNeeded)}</p>
+                <p className="font-display text-h3 text-navy">{formatCurrency(kpis.totalNeeded)}</p>
               </div>
               <div className="rounded-input bg-success-soft p-3">
                 <p className="text-caption text-muted">Raised</p>
-                <p className="font-display text-h3 text-success">{formatCurrency(totalRaised)}</p>
+                <p className="font-display text-h3 text-success">{formatCurrency(kpis.totalRaised)}</p>
               </div>
             </div>
           </div>
@@ -128,29 +184,35 @@ export default function StudentDashboard() {
                 </Link>
               }
             />
-            <div className="space-y-4">
-              {pendingBills.map((bill) => {
-                const p = pct(bill.raised, bill.total);
-                return (
-                  <div key={bill.id}>
-                    <div className="mb-1 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-caption font-semibold text-navy">{bill.name}</span>
-                        {bill.status === "Overdue" && <Badge tone="alert">Overdue</Badge>}
+            {pendingBills.length === 0 ? (
+              <p className="py-6 text-center text-caption text-muted">
+                No pending bills. <Link href="/dashboard/student/bills" className="font-semibold text-accent hover:underline">Add a bill</Link> to start receiving support.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {pendingBills.map((bill) => {
+                  const p = pct(bill.raised, bill.total);
+                  return (
+                    <div key={bill.id}>
+                      <div className="mb-1 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-caption font-semibold text-navy">{bill.name}</span>
+                          {bill.status === "Overdue" && <Badge tone="alert">Overdue</Badge>}
+                        </div>
+                        <span className="inline-flex items-center gap-1 text-label text-muted">
+                          <CalendarIcon size={12} /> {formatDate(bill.dueDate)}
+                        </span>
                       </div>
-                      <span className="inline-flex items-center gap-1 text-label text-muted">
-                        <CalendarIcon size={12} /> {formatDate(bill.dueDate)}
-                      </span>
+                      <ProgressBar value={p} height="sm" />
+                      <div className="mt-1 flex justify-between text-label text-muted">
+                        <span>{formatCurrency(bill.raised)} of {formatCurrency(bill.total)}</span>
+                        <span>{p}%</span>
+                      </div>
                     </div>
-                    <ProgressBar value={p} height="sm" />
-                    <div className="mt-1 flex justify-between text-label text-muted">
-                      <span>{formatCurrency(bill.raised)} of {formatCurrency(bill.total)}</span>
-                      <span>{p}%</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </Card>
       </div>
@@ -167,39 +229,46 @@ export default function StudentDashboard() {
                 </Link>
               }
             />
-            <div className="divide-y divide-inputborder/40">
-              {recent.map((p) => (
-                <div key={p.id} className="flex items-center gap-3 py-3">
-                  <Avatar name={p.donorName} anonymous={p.anonymous} size="sm" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-caption font-semibold text-navy">{p.donorName}</p>
-                    <p className="text-label text-muted">{formatDate(p.date)}</p>
+            {recentPayments.length === 0 ? (
+              <p className="py-6 text-center text-caption text-muted">
+                No contributions yet. They will appear here as soon as a sponsor gives.
+              </p>
+            ) : (
+              <div className="divide-y divide-inputborder/40">
+                {recentPayments.map((p) => (
+                  <div key={p.id} className="flex items-center gap-3 py-3">
+                    <Avatar name={p.donorName} anonymous={p.anonymous} size="sm" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-caption font-semibold text-navy">{p.donorName}</p>
+                      <p className="text-label text-muted">{formatDate(p.date)}</p>
+                    </div>
+                    <span className="font-semibold text-success">+{formatCurrency(p.amount)}</span>
                   </div>
-                  <span className="font-semibold text-success">+{formatCurrency(p.amount)}</span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </Card>
 
-        {/* Profile Completion + Active Sponsors */}
+        {/* Profile Completion + Recent Sponsors */}
         <div className="space-y-6">
           <Card>
             <div className="flex flex-col items-center p-6">
               <SectionHeader title="Profile" />
               <ProgressRing
-                value={student.profileCompletion}
+                value={kpis.profileCompletion}
                 size={120}
-                label={`${student.profileCompletion}%`}
+                label={`${kpis.profileCompletion}%`}
                 sublabel="complete"
                 color="#1A3A6B"
               />
-              {student.profileCompletion < 100 && (
+              {missing.length > 0 && (
                 <div className="mt-4 w-full rounded-input bg-warm/60 p-3 text-caption text-muted">
                   <p className="font-semibold text-navy">What&apos;s missing:</p>
                   <ul className="mt-1 list-inside list-disc">
-                    <li>Add a recent photo update</li>
-                    <li>Complete your biography</li>
+                    {missing.map((m) => (
+                      <li key={m}>{m}</li>
+                    ))}
                   </ul>
                 </div>
               )}
@@ -208,18 +277,16 @@ export default function StudentDashboard() {
 
           <Card>
             <div className="p-6">
-              <SectionHeader title="Active Sponsors" />
-              <AvatarStack
-                items={[
-                  { name: "Mrs. Onyeka A." },
-                  { anonymous: true },
-                  { name: "Mr. Chukwuma O." },
-                  { name: "Grace Foundation" },
-                  { anonymous: true },
-                ]}
-                extra={student.sponsorCount - 5}
-                size="md"
-              />
+              <SectionHeader title="Recent Sponsors" />
+              {sponsors.length === 0 ? (
+                <p className="text-caption text-muted">Your sponsors will appear here.</p>
+              ) : (
+                <AvatarStack
+                  items={sponsors.slice(0, 5)}
+                  extra={Math.max(0, kpis.sponsorCount - Math.min(5, sponsors.length))}
+                  size="md"
+                />
+              )}
             </div>
           </Card>
         </div>

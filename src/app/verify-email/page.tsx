@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AuthShell } from "@/components/auth/AuthShell";
@@ -22,36 +22,31 @@ function VerifyEmailContent() {
   const [resendEmail, setResendEmail] = useState("");
   const [isResending, setIsResending] = useState(false);
 
-  useEffect(() => {
-    if (!token) return;
+  // Tokens are single-use: verify each one exactly once, even when React
+  // re-runs the effect (Strict Mode remount, or a new `toast` identity).
+  const verifiedToken = useRef<string | null>(null);
 
-    let isMounted = true;
+  useEffect(() => {
+    if (!token || verifiedToken.current === token) return;
+    verifiedToken.current = token;
 
     async function verify() {
       setStatus("verifying");
       try {
         await apiClient.auth.verifyEmail(token!);
-        if (isMounted) {
-          setStatus("success");
-          toast("Email verified successfully!", "success");
-        }
+        setStatus("success");
+        toast("Email verified successfully!", "success");
       } catch (err: unknown) {
-        if (isMounted) {
-          setStatus("error");
-          setErrorMessage(
-            err instanceof Error
-              ? err.message
-              : "This verification link is invalid or has expired."
-          );
-        }
+        setStatus("error");
+        setErrorMessage(
+          err instanceof Error
+            ? err.message
+            : "This verification link is invalid or has expired."
+        );
       }
     }
 
     verify();
-
-    return () => {
-      isMounted = false;
-    };
   }, [token, toast]);
 
   async function handleResend(e: React.FormEvent) {
@@ -60,8 +55,8 @@ function VerifyEmailContent() {
 
     setIsResending(true);
     try {
-      await apiClient.post("/api/auth/resend-verification", { email: resendEmail });
-      toast("A new verification link has been sent to your email.", "success");
+      await apiClient.auth.resendVerification(resendEmail.trim());
+      toast("If that account still needs verifying, a new link is on its way.", "success");
       setResendEmail("");
     } catch (err: unknown) {
       toast(

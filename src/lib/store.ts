@@ -14,6 +14,8 @@ interface SessionState {
   name: string | null;
   userId: string | null;
   email: string | null;
+  /** Profile photo URL; undefined = not loaded yet, null = none. */
+  photo?: string | null;
   accessToken: string | null;
   status: "idle" | "loading" | "authenticated" | "unauthenticated";
   isInitialized: boolean;
@@ -25,7 +27,11 @@ interface SessionState {
     userId: string;
     name?: string;
     email?: string;
+    photo?: string | null;
   }) => void;
+
+  /** Update display name / photo (e.g. after a profile edit). */
+  setProfile: (profile: { name?: string; photo?: string | null }) => void;
 
   /** Update access token (e.g. after silent refresh) */
   setAccessToken: (accessToken: string) => void;
@@ -58,16 +64,23 @@ export const useSession = create<SessionState>((set) => ({
   status: "idle",
   isInitialized: false,
 
-  setSession: ({ accessToken, role, userId, name, email }) =>
+  setSession: ({ accessToken, role, userId, name, email, photo }) =>
     set({
       accessToken,
       role,
       userId,
       name: name ?? null,
       email: email ?? null,
+      photo,
       status: "authenticated",
       isInitialized: true,
     }),
+
+  setProfile: ({ name, photo }) =>
+    set((state) => ({
+      name: name ?? state.name,
+      photo: photo === undefined ? state.photo : photo,
+    })),
 
   setAccessToken: (accessToken) =>
     set({
@@ -83,6 +96,7 @@ export const useSession = create<SessionState>((set) => ({
     set({
       role: null,
       name: null,
+      photo: undefined,
       userId: null,
       email: null,
       accessToken: null,
@@ -103,6 +117,7 @@ export const useSession = create<SessionState>((set) => ({
     set({
       role: null,
       name: null,
+      photo: undefined,
       userId: null,
       email: null,
       accessToken: null,

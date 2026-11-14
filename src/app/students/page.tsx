@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { StudentCard } from "@/components/domain/StudentCard";
@@ -9,27 +9,23 @@ import { Select } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SkeletonGrid } from "@/components/ui/Skeleton";
 import { SearchIcon, XIcon, MenuIcon } from "@/components/ui/icons";
-import { students } from "@/lib/mock-data";
-import { pct } from "@/lib/format";
+import { publicApi, type BrowseQuery } from "@/lib/public-api";
+import { useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
-import type { Student } from "@/lib/types";
+import type { BillCategory, FormationStage, Student } from "@/lib/types";
 
-const uniq = (arr: string[]) => Array.from(new Set(arr));
+const uniq = (arr: string[]) => Array.from(new Set(arr.filter(Boolean))).sort();
 
-const FORMATION_STAGES = ["Professed", "Novice", "Postulant"];
-const BILL_TYPES = ["School Fees", "Medical", "Books", "Clothing", "Feeding"];
-
-function urgency(s: Student) {
-  const active = s.bills.filter((b) => b.status !== "Fully Funded" && b.status !== "Archived");
-  if (!active.length) return 100;
-  return Math.min(...active.map((b) => pct(b.raised, b.total)));
-}
+// Must match the backend's formationStage / billCategory enums.
+const FORMATION_STAGES: FormationStage[] = ["Seminarian", "Novice", "Postulant"];
+const BILL_TYPES: BillCategory[] = ["School Fees", "Medical", "Books", "Clothing", "Feeding", "Miscellaneous"];
+const PER_PAGE = 24;
 
 type SortKey = "urgent" | "newest" | "alpha" | "sponsored";
 
 export default function BrowsePage() {
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [congregation, setCongregation] = useState("all");
   const [stage, setStage] = useState("all");
   const [school, setSchool] = useState("all");
@@ -38,53 +34,53 @@ export default function BrowsePage() {
   const [hideFunded, setHideFunded] = useState(false);
   const [sort, setSort] = useState<SortKey>("urgent");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [results, setResults] = useState<Student[]>([]);
 
-  // Skeleton loading (PRD §4.7)
+  // Debounce typing so we don't hit the API on every keystroke.
   useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 900);
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => clearTimeout(t);
-  }, []);
+  }, [search]);
 
-  const congregations = useMemo(() => uniq(students.map((s) => s.congregation)), []);
-  const schools = useMemo(() => uniq(students.map((s) => s.school)), []);
-  const countries = useMemo(() => uniq(students.map((s) => s.country)), []);
+  const query: BrowseQuery = {
+    search: debouncedSearch || undefined,
+    congregation: congregation === "all" ? undefined : congregation,
+    stage: stage === "all" ? undefined : (stage as FormationStage),
+    school: school === "all" ? undefined : school,
+    country: country === "all" ? undefined : country,
+    billType: billType === "all" ? undefined : (billType as BillCategory),
+    hideFunded: hideFunded || undefined,
+    sort,
+  };
+  const queryKey = JSON.stringify(query);
 
-  const results = useMemo(() => {
-    let list = students.filter((s) => s.verification === "Verified");
+  // The page number belongs to one filter set: a new filter set starts at page 1.
+  const [paging, setPaging] = useState({ key: queryKey, page: 1 });
+  const page = paging.key === queryKey ? paging.page : 1;
+  const loadMore = () => setPaging({ key: queryKey, page: page + 1 });
 
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter(
-        (s) =>
-          s.name.toLowerCase().includes(q) ||
-          s.congregation.toLowerCase().includes(q) ||
-          s.school.toLowerCase().includes(q)
-      );
-    }
-    if (congregation !== "all") list = list.filter((s) => s.congregation === congregation);
-    if (stage !== "all") list = list.filter((s) => s.formationStage === stage);
-    if (school !== "all") list = list.filter((s) => s.school === school);
-    if (country !== "all") list = list.filter((s) => s.country === country);
-    if (billType !== "all")
-      list = list.filter((s) => s.bills.some((b) => b.category === billType && b.status !== "Fully Funded"));
-    if (hideFunded) list = list.filter((s) => urgency(s) < 100);
+  // Filtering, sorting and pagination are done by the API (verified students only).
+  const { data, error, loading, reload } = useApi(
+    () => publicApi.students({ ...query, page, perPage: PER_PAGE }),
+    [queryKey, page]
+  );
+  useEffect(() => {
+    if (!data) return;
+    const p = data.meta?.page ?? 1;
+    setResults((prev) => (p === 1 ? data.data : [...prev, ...data.data]));
+  }, [data]);
 
-    switch (sort) {
-      case "urgent":
-        list = [...list].sort((a, b) => urgency(a) - urgency(b));
-        break;
-      case "newest":
-        list = [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-        break;
-      case "alpha":
-        list = [...list].sort((a, b) => a.name.localeCompare(b.name));
-        break;
-      case "sponsored":
-        list = [...list].sort((a, b) => b.sponsorCount - a.sponsorCount);
-        break;
-    }
-    return list;
-  }, [search, congregation, stage, school, country, billType, hideFunded, sort]);
+  const total = data?.meta?.total ?? results.length;
+  const hasMore = !!data?.meta && page < data.meta.totalPages;
+
+  // Filter options come from the verified roster (first 100 profiles).
+  const { data: facetSource } = useApi(() => publicApi.students({ perPage: 100, sort: "alpha" }));
+  const roster = facetSource?.data ?? [];
+  const congregations = uniq(roster.map((s) => s.congregation));
+  const schools = uniq(roster.map((s) => s.school));
+  const countries = uniq(roster.map((s) => s.country));
+
+  const firstLoad = loading && page === 1;
 
   function clearFilters() {
     setSearch("");
@@ -94,6 +90,7 @@ export default function BrowsePage() {
     setCountry("all");
     setBillType("all");
     setHideFunded(false);
+    setSort("urgent");
   }
 
   const filterControls = (
@@ -167,7 +164,7 @@ export default function BrowsePage() {
             <div className="min-w-0 flex-1">
               <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
                 <p className="text-caption text-muted">
-                  {loading ? "Loading students…" : `${results.length} student${results.length !== 1 ? "s" : ""} found`}
+                  {firstLoad ? "Loading students…" : `${total} student${total !== 1 ? "s" : ""} found`}
                 </p>
                 <div className="flex items-center gap-3">
                   <Button variant="secondary" size="sm" className="lg:hidden" onClick={() => setFiltersOpen(true)}>
@@ -188,8 +185,14 @@ export default function BrowsePage() {
                 </div>
               </div>
 
-              {loading ? (
+              {firstLoad ? (
                 <SkeletonGrid count={8} />
+              ) : error && results.length === 0 ? (
+                <EmptyState
+                  title="Couldn't load students"
+                  description={error}
+                  action={<Button variant="secondary" onClick={() => void reload()}>Try again</Button>}
+                />
               ) : results.length === 0 ? (
                 <EmptyState
                   title="No students match your filters"
@@ -197,11 +200,20 @@ export default function BrowsePage() {
                   action={<Button variant="primary" onClick={clearFilters}>Clear filters</Button>}
                 />
               ) : (
-                <div className="masonry columns-1 sm:columns-2 xl:columns-3">
-                  {results.map((s) => (
-                    <StudentCard key={s.id} student={s} />
-                  ))}
-                </div>
+                <>
+                  <div className="masonry columns-1 sm:columns-2 xl:columns-3">
+                    {results.map((s) => (
+                      <StudentCard key={s.id} student={s} />
+                    ))}
+                  </div>
+                  {hasMore && (
+                    <div className="mt-8 flex justify-center">
+                      <Button variant="secondary" onClick={loadMore} disabled={loading}>
+                        {loading ? "Loading…" : "Load more students"}
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -222,7 +234,7 @@ export default function BrowsePage() {
             </div>
             {filterControls}
             <Button variant="primary" fullWidth className="mt-6" onClick={() => setFiltersOpen(false)}>
-              Show {results.length} students
+              Show {total} student{total !== 1 ? "s" : ""}
             </Button>
           </div>
         </div>

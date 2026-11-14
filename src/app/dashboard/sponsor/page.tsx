@@ -7,7 +7,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { PaymentHistoryTable, type PaymentRow } from "@/components/domain/PaymentHistoryTable";
-import { useToast } from "@/components/ui/Toast";
+import { EmptyState } from "@/components/ui/EmptyState";
 import {
   WalletIcon,
   UsersIcon,
@@ -16,38 +16,55 @@ import {
   DownloadIcon,
   ArrowRightIcon,
 } from "@/components/ui/icons";
-import { sponsor, sentPayments, students, recurringSponsorships } from "@/lib/mock-data";
+import { sponsorApi } from "@/lib/sponsor-api";
+import { useApi } from "@/lib/use-api";
 import { formatCurrency, pct } from "@/lib/format";
 
-// Students this sponsor has given to (derive from recurring + sent history).
-const sponsoredIds = Array.from(
-  new Set([
-    ...recurringSponsorships.map((r) => r.studentId),
-    ...sentPayments.map((p) => p.billId.split("-b")[0]),
-  ])
-);
-const myStudents = sponsoredIds
-  .map((id) => students.find((s) => s.id === id))
-  .filter((s): s is (typeof students)[number] => Boolean(s));
-
 export default function SponsorDashboardPage() {
-  const { toast } = useToast();
+  const { data, error, loading, reload } = useApi(() => sponsorApi.dashboard());
+  // Full giving history for the table (the dashboard only carries the latest 5).
+  const { data: history, loading: historyLoading } = useApi(() => sponsorApi.payments());
 
-  const rows: PaymentRow[] = sentPayments.map((p) => ({ ...p }));
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-6xl space-y-6" aria-busy="true">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="h-28 animate-pulse rounded-card bg-white/60 shadow-card" />
+          ))}
+        </div>
+        <div className="h-48 animate-pulse rounded-card bg-white/60 shadow-card" />
+      </div>
+    );
+  }
+  if (error || !data) {
+    return (
+      <EmptyState
+        icon={<WalletIcon size={28} />}
+        title="Couldn't load your dashboard"
+        description={error ?? "Please try again."}
+        action={<Button variant="secondary" onClick={() => void reload()}>Try again</Button>}
+      />
+    );
+  }
+
+  const { sponsor, kpis, myStudents } = data;
+  const rows: PaymentRow[] = (history?.data ?? data.recentPayments).map((p) => ({ ...p }));
+  const firstName = sponsor.name.split(" ")[0];
 
   return (
     <div className="mx-auto max-w-6xl">
       <PageTitle
-        title={`Welcome back, ${sponsor.name.split(" ")[0]}`}
+        title={firstName ? `Welcome back, ${firstName}` : "Welcome back"}
         subtitle="Your generosity in one place — see your impact, revisit students, and manage giving."
       />
 
       {/* KPIs */}
       <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile label="Total Given" value={sponsor.totalGiven} prefix="$" compact icon={<WalletIcon size={18} />} tone="gold" />
-        <StatTile label="Students Sponsored" value={sponsor.studentsSponsored} icon={<UsersIcon size={18} />} tone="accent" />
-        <StatTile label="Active Recurring" value={sponsor.activeRecurring} icon={<RepeatIcon size={18} />} tone="success" />
-        <StatTile label="Monthly Commitment" value={sponsor.monthlyCommitment} prefix="$" icon={<HeartHandIcon size={18} />} tone="navy" hint={`≈ ${formatCurrency(sponsor.monthlyCommitment * 12)} / year`} />
+        <StatTile label="Total Given" value={kpis.totalGiven} prefix="$" compact icon={<WalletIcon size={18} />} tone="gold" />
+        <StatTile label="Students Sponsored" value={kpis.studentsSponsored} icon={<UsersIcon size={18} />} tone="accent" />
+        <StatTile label="Active Recurring" value={kpis.activeRecurring} icon={<RepeatIcon size={18} />} tone="success" />
+        <StatTile label="Monthly Commitment" value={kpis.monthlyCommitment} prefix="$" icon={<HeartHandIcon size={18} />} tone="navy" hint={`≈ ${formatCurrency(kpis.monthlyCommitment * 12)} / year`} />
       </div>
 
       {/* Impact snapshot */}
@@ -56,20 +73,27 @@ export default function SponsorDashboardPage() {
           <div className="max-w-xl">
             <p className="text-caption font-semibold uppercase tracking-wide text-gold-light">Your Impact</p>
             <h2 className="mt-2 font-display text-h2">
-              You&apos;ve helped {sponsor.studentsSponsored} religious students stay in formation.
+              {kpis.studentsSponsored > 0
+                ? <>You&apos;ve helped {kpis.studentsSponsored} religious student{kpis.studentsSponsored !== 1 ? "s" : ""} stay in formation.</>
+                : <>Your first gift can keep a religious student in formation.</>}
             </h2>
             <p className="mt-2 text-body text-white/70">
-              Every gift is traceable to a specific need. Download a personalized impact report for your records or tax purposes.
+              Every gift is traceable to a specific need. Export your full giving history as CSV for your records or tax purposes.
             </p>
           </div>
-          <Button
-            variant="primary"
-            size="lg"
-            className="shrink-0"
-            onClick={() => toast("Your impact report (PDF) is being generated and will download shortly.", "success")}
-          >
-            <DownloadIcon size={18} /> Download Impact Report
-          </Button>
+          {kpis.studentsSponsored > 0 ? (
+            <a href="#giving-history" className="shrink-0">
+              <Button variant="primary" size="lg">
+                <DownloadIcon size={18} /> Export Giving History
+              </Button>
+            </a>
+          ) : (
+            <Link href="/students" className="shrink-0">
+              <Button variant="primary" size="lg">
+                <HeartHandIcon size={18} /> Find a student
+              </Button>
+            </Link>
+          )}
         </div>
       </div>
 
@@ -86,6 +110,14 @@ export default function SponsorDashboardPage() {
             </Link>
           }
         />
+        {myStudents.length === 0 ? (
+          <EmptyState
+            icon={<UsersIcon size={28} />}
+            title="No students yet"
+            description="Students you give to will appear here so you can follow their journey."
+            action={<Link href="/students"><Button variant="primary">Browse students</Button></Link>}
+          />
+        ) : (
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {myStudents.map((s) => {
             const active = s.bills.filter((b) => b.status !== "Archived");
@@ -125,12 +157,17 @@ export default function SponsorDashboardPage() {
             );
           })}
         </div>
+        )}
       </section>
 
       {/* Giving History */}
-      <section>
+      <section id="giving-history" className="scroll-mt-24">
         <SectionHeader title="Giving History" subtitle="Every gift you've made, fully traceable." />
-        <PaymentHistoryTable rows={rows} perspective="sent" />
+        {historyLoading ? (
+          <div className="h-48 animate-pulse rounded-card bg-white/60 shadow-card" />
+        ) : (
+          <PaymentHistoryTable rows={rows} perspective="sent" />
+        )}
       </section>
     </div>
   );

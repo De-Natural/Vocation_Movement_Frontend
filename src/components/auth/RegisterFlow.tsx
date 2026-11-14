@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
@@ -19,8 +19,10 @@ import {
 } from "@/components/ui/icons";
 import { useToast } from "@/components/ui/Toast";
 import { useSession } from "@/lib/store";
+import { apiClient, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/format";
-import type { BillCategory, UserRole } from "@/lib/types";
+import { publicApi } from "@/lib/public-api";
+import type { BillCategory } from "@/lib/types";
 
 type Role = "student" | "sponsor";
 
@@ -77,6 +79,137 @@ function RoleChooser({ onPick }: { onPick: (r: Role) => void }) {
   );
 }
 
+/* ── File upload ── */
+// Must match the backend's UploadsService rules (photos / documents buckets).
+const PHOTO_RULE = {
+  accept: "image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp",
+  mimeTypes: ["image/png", "image/jpeg", "image/webp"],
+  maxBytes: 5 * 1024 * 1024,
+  hint: "PNG, JPG, JPEG or WEBP, up to 5MB",
+};
+const DOCUMENT_RULE = {
+  accept: "application/pdf,image/png,image/jpeg,image/webp,.pdf,.png,.jpg,.jpeg,.webp",
+  mimeTypes: ["application/pdf", "image/png", "image/jpeg", "image/webp"],
+  maxBytes: 20 * 1024 * 1024,
+  hint: "PDF, PNG, JPG, JPEG or WEBP, up to 20MB",
+};
+type UploadRule = typeof PHOTO_RULE;
+
+/** Returns an error message, or null if the file passes the rule. */
+function checkFile(file: File, rule: UploadRule): string | null {
+  if (!rule.mimeTypes.includes(file.type)) return `Unsupported file type. Allowed: ${rule.hint}.`;
+  if (file.size > rule.maxBytes) return `File is too large. Allowed: ${rule.hint}.`;
+  return null;
+}
+
+function formatBytes(n: number) {
+  return n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function FileDropzone({
+  label,
+  required,
+  title,
+  rule,
+  file,
+  onChange,
+  onError,
+  preview,
+}: {
+  label: string;
+  required?: boolean;
+  title: string;
+  rule: UploadRule;
+  file: File | null;
+  onChange: (f: File | null) => void;
+  onError: (msg: string) => void;
+  /** Show an image thumbnail of the selected file. */
+  preview?: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!preview || !file || !file.type.startsWith("image/")) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file, preview]);
+
+  const pick = (f: File | undefined) => {
+    if (!f) return;
+    const error = checkFile(f, rule);
+    if (error) onError(error);
+    else onChange(f);
+  };
+
+  return (
+    <div>
+      <Label required={required}>{label}</Label>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={rule.accept}
+        className="hidden"
+        onChange={(e) => {
+          pick(e.target.files?.[0]);
+          e.target.value = ""; // allow re-selecting the same file
+        }}
+      />
+      {file ? (
+        <div className="flex items-center gap-3 rounded-input border-[1.5px] border-inputborder bg-white p-3">
+          {previewUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={previewUrl} alt="Selected file preview" className="h-14 w-14 shrink-0 rounded-full object-cover" />
+          ) : (
+            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-input bg-gold/12 text-label font-semibold text-gold-dark">
+              {file.type === "application/pdf" ? "PDF" : "IMG"}
+            </span>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-caption font-semibold text-navy">{file.name}</p>
+            <p className="text-label text-muted">{formatBytes(file.size)}</p>
+          </div>
+          <button type="button" onClick={() => inputRef.current?.click()} className="text-caption font-semibold text-accent hover:underline">
+            Change
+          </button>
+          <button type="button" onClick={() => onChange(null)} aria-label="Remove file" className="text-muted hover:text-navy">
+            <XIcon size={18} />
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            pick(e.dataTransfer.files?.[0]);
+          }}
+          className={`flex w-full items-center justify-center rounded-input border-[1.5px] border-dashed bg-white py-7 text-center transition-colors hover:border-gold ${
+            dragging ? "border-gold bg-gold/5" : "border-inputborder"
+          }`}
+        >
+          <span className="text-muted">
+            <UploadIcon size={26} className="mx-auto mb-2 text-gold" />
+            <span className="block text-caption font-semibold text-navy">{title}</span>
+            <span className="block text-label">Click or drag a file here · {rule.hint}</span>
+          </span>
+        </button>
+      )}
+    </div>
+  );
+}
+
 const STUDENT_STEPS = ["Personal Info", "Formation Details", "Profile Setup", "Bill Setup", "Review & Submit"];
 const SPONSOR_STEPS = ["Account Info", "Giving Preferences", "Verify Email"];
 
@@ -85,6 +218,82 @@ interface DraftBill {
   category: BillCategory;
   total: string;
   dueDate: string;
+}
+
+type Stage = "Seminarian" | "Novice" | "Postulant" | "Sister";
+type Currency = "USD" | "NGN" | "GHS" | "EUR" | "GBP";
+
+/** Everything the multi-step form collects; kept in state so values survive step changes. */
+interface RegisterForm {
+  fullName: string;
+  email: string;
+  password: string;
+  phone: string;
+  country: string;
+  // student
+  dob: string;
+  gender: string;
+  stage: Stage | "";
+  congregation: string;
+  school: string;
+  yearOfFormation: string;
+  expectedYear: string;
+  // sponsor
+  currency: Currency;
+  anonymous: boolean;
+}
+
+const EMPTY_FORM: RegisterForm = {
+  fullName: "",
+  email: "",
+  password: "",
+  phone: "",
+  country: "",
+  dob: "",
+  gender: "",
+  stage: "",
+  congregation: "",
+  school: "",
+  yearOfFormation: "",
+  expectedYear: "",
+  currency: "USD",
+  anonymous: false,
+};
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const BIO_MIN = 100;
+const BIO_MAX = 5000; // backend upsertReligiousProfileSchema limit
+
+/** First number in a label like "Year 2" (the backend parses it the same way). */
+const firstNumber = (s: string) => {
+  const m = s.match(/\d+/);
+  return m ? parseInt(m[0], 10) : NaN;
+};
+
+/** Mirrors the backend schemas so users get errors before the last step. */
+function validateStep(role: Role, step: number, f: RegisterForm, bio = ""): string | null {
+  if (step === 0) {
+    if (f.fullName.trim().length < 2) return "Please enter your full name.";
+    if (!EMAIL_RE.test(f.email.trim())) return "Please enter a valid email address.";
+    if (f.password.length < 8) return "Password must be at least 8 characters.";
+  }
+  if (role === "student" && step === 1) {
+    if (!f.stage) return "Please select your formation stage.";
+    if (f.congregation.trim().length < 2) return "Please enter your congregation name.";
+    if (f.school.trim().length < 2) return "Please enter your school or seminary name.";
+    const year = firstNumber(f.yearOfFormation);
+    if (!(year >= 1 && year <= 15)) return "Please enter your year of formation, e.g. Year 2.";
+    const expected = Number(f.expectedYear.trim());
+    const thisYear = new Date().getFullYear();
+    if (!/^\d{4}$/.test(f.expectedYear.trim()) || expected < thisYear || expected > thisYear + 20)
+      return `Please enter a valid expected ordination / profession year (${thisYear}–${thisYear + 20}).`;
+  }
+  if (role === "student" && step === 2) {
+    const len = bio.trim().length;
+    if (len < BIO_MIN) return `Your biography must be at least ${BIO_MIN} characters (currently ${len}).`;
+    if (len > BIO_MAX) return `Your biography must be at most ${BIO_MAX} characters.`;
+  }
+  return null;
 }
 
 export function RegisterFlow() {
@@ -96,13 +305,29 @@ export function RegisterFlow() {
   const [step, setStep] = useState(0);
   const router = useRouter();
   const { toast } = useToast();
-  const setSessionRole = useSession((s) => s.setRole);
+  const setSession = useSession((s) => s.setSession);
+  const [submitting, setSubmitting] = useState(false);
+  const [form, setForm] = useState<RegisterForm>(EMPTY_FORM);
+  const field =
+    (key: keyof RegisterForm) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+      setForm((f) => ({ ...f, [key]: e.target.value }));
 
   // Student draft bills
   const [bills, setBills] = useState<DraftBill[]>([
-    { name: "School Fees — Session 2026", category: "School Fees", total: "1200", dueDate: "2026-10-15" },
+    { name: "", category: "School Fees", total: "", dueDate: "" },
   ]);
   const [bio, setBio] = useState("");
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [admissionLetter, setAdmissionLetter] = useState<File | null>(null);
+
+  // Sponsors start with the platform's "anonymous by default" setting.
+  useEffect(() => {
+    publicApi
+      .settings()
+      .then((s) => setForm((f) => ({ ...f, anonymous: s.anonymousDefault })))
+      .catch(() => undefined);
+  }, []);
 
   const steps = role === "student" ? STUDENT_STEPS : SPONSOR_STEPS;
 
@@ -122,24 +347,130 @@ export function RegisterFlow() {
   const isLast = step === steps.length - 1;
 
   const next = () => {
+    const error =
+      validateStep(role, step, form, bio) ??
+      (role === "student" && step === 2 && !admissionLetter
+        ? "Please upload your school admission letter."
+        : null);
+    if (error) {
+      toast(error, "error");
+      return;
+    }
     if (isLast) {
-      finish();
+      void finish(role);
     } else {
       setStep((s) => s + 1);
     }
   };
   const back = () => (step === 0 ? setRole(null) : setStep((s) => s - 1));
 
-  function finish() {
-    const roleName: UserRole = role === "student" ? "student" : "sponsor";
-    if (role === "student") {
-      toast("Profile submitted! It is now pending admin verification.", "success");
-      setSessionRole(roleName, "Brother Emeka Okonkwo");
-      router.push("/dashboard/student");
-    } else {
-      toast("Welcome! Your sponsor account is now active.", "success");
-      setSessionRole(roleName, "Mrs. Onyeka Adeleke");
-      router.push("/dashboard/sponsor");
+  /**
+   * 1. POST /api/auth/register (creates user + profile, sends verification email)
+   * 2. POST /api/auth/login    (sets the session cookies)
+   * 3. Save the extras the register endpoint doesn't take: student profile
+   *    details + draft bills, or sponsor giving preferences.
+   */
+  async function finish(r: Role) {
+    if (submitting) return;
+    setSubmitting(true);
+    const email = form.email.trim();
+
+    try {
+      await apiClient.auth.register({
+        email,
+        password: form.password,
+        role: r,
+        fullName: form.fullName.trim(),
+        country: form.country.trim() || undefined,
+        ...(r === "student"
+          ? {
+              formationStage: form.stage as Stage,
+              congregation: form.congregation.trim(),
+              school: form.school.trim(),
+            }
+          : {}),
+      });
+    } catch (err) {
+      const message =
+        err instanceof ApiError && err.status === 0
+          ? "Can't reach the server. Please try again."
+          : err instanceof Error
+            ? err.message
+            : "Registration failed.";
+      toast(message, "error");
+      // Account details (email/password) live on step 0 — send the user back there.
+      if (err instanceof ApiError && (err.code === "EMAIL_TAKEN" || err.status === 400)) setStep(0);
+      setSubmitting(false);
+      return;
+    }
+
+    try {
+      const session = await apiClient.auth.login({ email, password: form.password, role: r });
+      setSession({ ...session, email, name: session.name ?? form.fullName.trim() });
+
+      const extras: Promise<unknown>[] = [];
+      if (r === "student") {
+        const profile: Record<string, string> = {};
+        if (bio.trim()) profile.biography = bio.trim();
+        if (form.phone.trim()) profile.phoneNumber = form.phone.trim();
+        if (form.dob) profile.dateOfBirth = form.dob;
+        if (form.gender) profile.gender = form.gender;
+        if (form.yearOfFormation.trim()) profile.yearOfFormation = form.yearOfFormation.trim();
+        if (form.expectedYear.trim()) profile.expectedYear = form.expectedYear.trim();
+        if (Object.keys(profile).length) extras.push(apiClient.patch("/api/religious/profile", profile));
+
+        // Uploads need the session cookies, so they run after login.
+        if (photo) {
+          const fd = new FormData();
+          fd.append("file", photo);
+          extras.push(apiClient.post("/api/religious/photo", fd));
+        }
+        if (admissionLetter) {
+          const fd = new FormData();
+          fd.append("file", admissionLetter);
+          fd.append("label", "Admission Letter");
+          extras.push(apiClient.post("/api/religious/documents", fd));
+        }
+
+        bills
+          .filter((b) => b.name.trim().length >= 2 && Number(b.total) > 0 && b.dueDate)
+          .forEach((b) =>
+            extras.push(
+              apiClient.post("/api/bills", {
+                name: b.name.trim(),
+                category: b.category,
+                total: Number(b.total),
+                dueDate: b.dueDate,
+              })
+            )
+          );
+      } else {
+        extras.push(
+          apiClient.patch("/api/sponsors/profile", {
+            currency: form.currency,
+            anonymousByDefault: form.anonymous,
+          })
+        );
+      }
+
+      const results = await Promise.allSettled(extras);
+      if (results.some((x) => x.status === "rejected")) {
+        toast("Account created, but some details didn't save. You can update them from your dashboard.", "error");
+      } else {
+        toast(
+          r === "student"
+            ? "Profile submitted! It is now pending admin verification. Check your email to verify your address."
+            : "Welcome! Check your email to verify your address.",
+          "success"
+        );
+      }
+      router.push(`/dashboard/${session.role}`);
+    } catch {
+      // Account exists but auto sign-in failed — let them sign in manually.
+      toast("Account created. Please verify your email, then sign in.", "success");
+      router.push("/verify-email");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -168,49 +499,48 @@ export function RegisterFlow() {
           {/* ── STUDENT FLOW ── */}
           {role === "student" && step === 0 && (
             <>
-              <Input label="Full name" name="name" required placeholder="Br. Emeka Okonkwo" />
+              <Input label="Full name" name="name" required placeholder="Br. Emeka Okonkwo" value={form.fullName} onChange={field("fullName")} />
               <div className="grid grid-cols-2 gap-4">
-                <Input label="Date of birth" name="dob" type="date" required />
-                <Select label="Gender" name="gender" required placeholder="Select" options={[
+                <Input label="Date of birth" name="dob" type="date" required value={form.dob} onChange={field("dob")} />
+                <Select label="Gender" name="gender" required placeholder="Select" value={form.gender} onChange={field("gender")} options={[
                   { value: "male", label: "Male" },
                   { value: "female", label: "Female" },
                 ]} />
               </div>
-              <Input label="Nationality" name="nationality" required placeholder="Nigerian" />
-              <Input label="Phone number" name="phone" type="tel" required placeholder="+234 800 000 0000" />
-              <Input label="Email" name="email" type="email" required placeholder="you@example.com" />
-              <Input label="Password" name="password" type="password" required hint="At least 8 characters." />
+              <Input label="Country" name="country" required placeholder="Nigeria" value={form.country} onChange={field("country")} />
+              <Input label="Phone number" name="phone" type="tel" required placeholder="+234 800 000 0000" value={form.phone} onChange={field("phone")} />
+              <Input label="Email" name="email" type="email" required placeholder="you@example.com" value={form.email} onChange={field("email")} />
+              <Input label="Password" name="password" type="password" required hint="At least 8 characters." value={form.password} onChange={field("password")} />
             </>
           )}
 
           {role === "student" && step === 1 && (
             <>
-              <Select label="Formation stage" name="stage" required placeholder="Select stage" options={[
+              <Select label="Formation stage" name="stage" required placeholder="Select stage" value={form.stage} onChange={field("stage")} options={[
                 { value: "Seminarian", label: "Seminarian" },
                 { value: "Novice", label: "Novice" },
                 { value: "Postulant", label: "Postulant" },
               ]} />
-              <Input label="Congregation name" name="congregation" required placeholder="Missionaries of the Precious Blood" />
-              <Input label="School / Seminary name" name="school" required placeholder="St. Joseph Major Seminary" />
+              <Input label="Congregation name" name="congregation" required placeholder="Missionaries of the Precious Blood" value={form.congregation} onChange={field("congregation")} />
+              <Input label="School / Seminary name" name="school" required placeholder="St. Joseph Major Seminary" value={form.school} onChange={field("school")} />
               <div className="grid grid-cols-2 gap-4">
-                <Input label="Year of formation" name="year" required placeholder="Year 2" />
-                <Input label="Expected ordination / profession year" name="expected" required placeholder="2028" />
+                <Input label="Year of formation" name="year" required placeholder="Year 2" value={form.yearOfFormation} onChange={field("yearOfFormation")} />
+                <Input label="Expected ordination / profession year" name="expected" type="number" inputMode="numeric" required placeholder="2028" value={form.expectedYear} onChange={field("expectedYear")} />
               </div>
             </>
           )}
 
           {role === "student" && step === 2 && (
             <>
-              <div>
-                <Label>Profile photo</Label>
-                <div className="flex items-center justify-center rounded-input border-[1.5px] border-dashed border-inputborder bg-white py-8 text-center">
-                  <div className="text-muted">
-                    <UploadIcon size={28} className="mx-auto mb-2 text-gold" />
-                    <p className="text-caption font-semibold text-navy">Upload a photo</p>
-                    <p className="text-label">PNG or JPG, up to 5MB</p>
-                  </div>
-                </div>
-              </div>
+              <FileDropzone
+                label="Profile photo"
+                title="Upload a photo"
+                rule={PHOTO_RULE}
+                file={photo}
+                onChange={setPhoto}
+                onError={(m) => toast(m, "error")}
+                preview
+              />
               <Textarea
                 label="Biography"
                 name="bio"
@@ -218,19 +548,23 @@ export function RegisterFlow() {
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
                 placeholder="Tell sponsors about your calling, your journey, and your hopes…"
-                hint={`Minimum 100 characters. ${bio.length}/100`}
+                maxLength={BIO_MAX}
+                hint={
+                  bio.trim().length >= BIO_MIN
+                    ? `✓ ${bio.trim().length} characters`
+                    : `Minimum ${BIO_MIN} characters. ${bio.trim().length}/${BIO_MIN}`
+                }
                 rows={5}
               />
-              <div>
-                <Label required>School admission letter</Label>
-                <div className="flex items-center justify-center rounded-input border-[1.5px] border-dashed border-inputborder bg-white py-6 text-center">
-                  <div className="text-muted">
-                    <UploadIcon size={24} className="mx-auto mb-2 text-gold" />
-                    <p className="text-caption font-semibold text-navy">Upload PDF or image</p>
-                    <p className="text-label">For admin verification</p>
-                  </div>
-                </div>
-              </div>
+              <FileDropzone
+                label="School admission letter (for admin verification)"
+                required
+                title="Upload PDF or image"
+                rule={DOCUMENT_RULE}
+                file={admissionLetter}
+                onChange={setAdmissionLetter}
+                onError={(m) => toast(m, "error")}
+              />
             </>
           )}
 
@@ -295,23 +629,27 @@ export function RegisterFlow() {
           {/* ── SPONSOR FLOW ── */}
           {role === "sponsor" && step === 0 && (
             <>
-              <Input label="Full name" name="name" required placeholder="Mrs. Onyeka Adeleke" />
-              <Input label="Email" name="email" type="email" required placeholder="you@example.com" />
-              <Input label="Phone" name="phone" type="tel" required placeholder="+234 800 000 0000" />
-              <Input label="Country" name="country" required placeholder="Nigeria" />
-              <Input label="Password" name="password" type="password" required hint="At least 8 characters." />
+              <Input label="Full name" name="name" required placeholder="Mrs. Onyeka Adeleke" value={form.fullName} onChange={field("fullName")} />
+              <Input label="Email" name="email" type="email" required placeholder="you@example.com" value={form.email} onChange={field("email")} />
+              <Input label="Phone" name="phone" type="tel" required placeholder="+234 800 000 0000" value={form.phone} onChange={field("phone")} />
+              <Input label="Country" name="country" required placeholder="Nigeria" value={form.country} onChange={field("country")} />
+              <Input label="Password" name="password" type="password" required hint="At least 8 characters." value={form.password} onChange={field("password")} />
             </>
           )}
 
           {role === "sponsor" && step === 1 && (
             <>
               <div className="rounded-card border border-inputborder/50 bg-white p-4">
-                <Toggle checked={true} onChange={() => {}} label="Give anonymously by default" />
+                <Toggle
+                  checked={form.anonymous}
+                  onChange={(v: boolean) => setForm((f) => ({ ...f, anonymous: v }))}
+                  label="Give anonymously by default"
+                />
                 <p className="mt-2 text-caption text-muted">
                   You can change this for any individual gift.
                 </p>
               </div>
-              <Select label="Preferred currency" name="currency" required options={[
+              <Select label="Preferred currency" name="currency" required value={form.currency} onChange={field("currency")} options={[
                 { value: "USD", label: "USD — US Dollar" },
                 { value: "NGN", label: "NGN — Nigerian Naira" },
                 { value: "GHS", label: "GHS — Ghanaian Cedi" },
@@ -326,8 +664,8 @@ export function RegisterFlow() {
               <CheckCircleIcon size={40} className="mx-auto mb-3 text-success" />
               <h3 className="font-display text-h3 text-navy">Verify your email</h3>
               <p className="mt-2 text-caption text-muted">
-                We&apos;ve sent a verification link to your inbox. Click it to activate your account.
-                For this demo, continue below.
+                When you click Finish we&apos;ll create your account and email you a verification
+                link. Click it to confirm your address.
               </p>
             </div>
           )}
@@ -338,8 +676,8 @@ export function RegisterFlow() {
         <Button variant="secondary" onClick={back} className="flex-1">
           {step === 0 ? "Change role" : "Back"}
         </Button>
-        <Button variant="primary" onClick={next} className="flex-1">
-          {isLast ? (role === "student" ? "Submit for Review" : "Finish") : "Continue"}
+        <Button variant="primary" onClick={next} className="flex-1" disabled={submitting}>
+          {submitting ? "Submitting…" : isLast ? (role === "student" ? "Submit for Review" : "Finish") : "Continue"}
         </Button>
       </div>
     </AuthShell>

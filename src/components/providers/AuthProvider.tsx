@@ -47,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             userId: me.userId,
             name: me.name,
             email: me.email,
+            photo: me.photo ?? null,
           });
         }
       } catch {

@@ -7,9 +7,6 @@ export default function AdminDashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return (
-    <DashboardShell role="admin" userName="Sister Perpetua (Admin)">
-      {children}
-    </DashboardShell>
-  );
+  // Name and photo come from the signed-in session.
+  return <DashboardShell role="admin">{children}</DashboardShell>;
 }
