@@ -46,7 +46,11 @@ export interface Contribution {
   billId: string;
   donorName: string; // "Anonymous" when anonymous
   anonymous: boolean;
+  /** In the currency the gift was paid in (`currency`, naira when missing). */
   amount: number;
+  currency?: string;
+  /** Naira value at the locked exchange rate (null: no rate for its currency yet). */
+  nairaAmount?: number | null;
   date: string; // ISO
   transactionId: string;
   status: PaymentStatus;
@@ -107,6 +111,8 @@ export interface RecurringSponsorship {
   studentName: string;
   studentPhoto: string;
   amount: number;
+  /** Currency the monthly gift is charged in. */
+  currency?: string;
   billName: string;
   active: boolean;
   nextDate: string;

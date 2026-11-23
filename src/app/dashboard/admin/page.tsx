@@ -64,7 +64,7 @@ export default function AdminOverviewPage() {
       <div className={`mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4 ${!data && !error ? "animate-pulse" : ""}`}>
         <StatTile label="Total Students" value={kpis?.studentsSupported ?? 0} icon={<UsersIcon size={18} />} tone="accent" />
         <StatTile label="Pending Verification" value={pendingCount} icon={<ShieldIcon size={18} />} tone="alert" hint="Awaiting review" />
-        <StatTile label="Funds Raised" value={kpis?.fundsRaised ?? 0} prefix="$" compact icon={<WalletIcon size={18} />} tone="gold" />
+        <StatTile label="Funds Raised" value={kpis?.fundsRaised ?? 0} prefix="₦" compact icon={<WalletIcon size={18} />} tone="gold" />
         <StatTile label="Unread Inquiries" value={unreadInquiries} icon={<MessageIcon size={18} />} tone="navy" hint="From the contact form" />
       </div>
 

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { AuthShell, StepIndicator } from "./AuthShell";
+import { EmailOtpForm } from "./EmailOtpForm";
 import { Button } from "@/components/ui/Button";
 import { Input, Select, Textarea, Toggle, Label } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
@@ -220,7 +221,7 @@ interface DraftBill {
   dueDate: string;
 }
 
-type Stage = "Seminarian" | "Novice" | "Postulant" | "Sister";
+type Stage = "Seminarian" | "Novice" | "Postulant"; // must match the backend (auth.dto.ts)
 type Currency = "USD" | "NGN" | "GHS" | "EUR" | "GBP";
 
 /** Everything the multi-step form collects; kept in state so values survive step changes. */
@@ -307,6 +308,8 @@ export function RegisterFlow() {
   const { toast } = useToast();
   const setSession = useSession((s) => s.setSession);
   const [submitting, setSubmitting] = useState(false);
+  // After the account is created: the email-code step, then where to go.
+  const [verifyStep, setVerifyStep] = useState<{ email: string; dest: string } | null>(null);
   const [form, setForm] = useState<RegisterForm>(EMPTY_FORM);
   const field =
     (key: keyof RegisterForm) =>
@@ -330,6 +333,14 @@ export function RegisterFlow() {
   }, []);
 
   const steps = role === "student" ? STUDENT_STEPS : SPONSOR_STEPS;
+
+  if (verifyStep) {
+    return (
+      <AuthShell title="Verify your email" subtitle="One last step to finish creating your account.">
+        <EmailOtpForm email={verifyStep.email} onVerified={() => router.push(verifyStep.dest)} />
+      </AuthShell>
+    );
+  }
 
   if (!role) {
     return (
@@ -456,19 +467,15 @@ export function RegisterFlow() {
       const results = await Promise.allSettled(extras);
       if (results.some((x) => x.status === "rejected")) {
         toast("Account created, but some details didn't save. You can update them from your dashboard.", "error");
-      } else {
-        toast(
-          r === "student"
-            ? "Profile submitted! It is now pending admin verification. Check your email to verify your address."
-            : "Welcome! Check your email to verify your address.",
-          "success"
-        );
+      } else if (r === "student") {
+        toast("Profile submitted! It is now pending admin verification.", "success");
       }
-      router.push(`/dashboard/${session.role}`);
+      // Last step: confirm the email with the code we just sent.
+      setVerifyStep({ email, dest: `/dashboard/${session.role}` });
     } catch {
       // Account exists but auto sign-in failed — let them sign in manually.
       toast("Account created. Please verify your email, then sign in.", "success");
-      router.push("/verify-email");
+      setVerifyStep({ email, dest: "/signin" });
     } finally {
       setSubmitting(false);
     }
@@ -676,7 +683,7 @@ export function RegisterFlow() {
         <Button variant="secondary" onClick={back} className="flex-1">
           {step === 0 ? "Change role" : "Back"}
         </Button>
-        <Button variant="primary" onClick={next} className="flex-1" disabled={submitting}>
+        <Button loading={submitting} variant="primary" onClick={next} className="flex-1" disabled={submitting}>
           {submitting ? "Submitting…" : isLast ? (role === "student" ? "Submit for Review" : "Finish") : "Continue"}
         </Button>
       </div>

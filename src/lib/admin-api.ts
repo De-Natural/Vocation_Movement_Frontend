@@ -12,6 +12,8 @@ export interface TransactionRow {
   billName: string;
   amount: number;
   currency: string;
+  /** Naira value at the locked exchange rate (null: no rate for its currency yet). */
+  nairaAmount?: number | null;
   transactionId: string;
   status: PaymentStatus;
   recurring: boolean;
@@ -48,6 +50,14 @@ export interface PlatformSettings {
   maintenanceMode: boolean;
   anonymousDefault: boolean;
   emailReceipts: boolean;
+  /** Shown on the maintenance page and emailed to everyone when maintenance is switched on. */
+  maintenanceMessage: string;
+  /** The Super-Admin's overrides: naira per 1 unit (empty = use the live rate). */
+  payoutFxRates: Record<string, number>;
+  /** Today's live rates (refreshed daily by the server), read-only. */
+  liveFx?: { rates: Record<string, number>; updatedAt: string; fetchedAt: string; source: string } | null;
+  /** Only in the save response when maintenance was just switched on. */
+  maintenance?: { sessionsEnded: number; emailsQueued: number };
 }
 
 /** A verification document as returned by GET /api/admin/verifications. */
@@ -106,7 +116,7 @@ export const adminApi = {
     }),
   /** CSV of every row matching the filters (not just the current page). */
   transactionsCsv: (filters: TransactionFilters) =>
-    apiClient.get<string>("/api/admin/transactions/export", { params: { ...filters } }),
+    apiClient.get<Blob>("/api/admin/transactions/export", { params: { ...filters }, blob: true }),
 
   settings: () => apiClient.get<PlatformSettings>("/api/admin/settings"),
   updateSettings: (body: Partial<PlatformSettings>) =>

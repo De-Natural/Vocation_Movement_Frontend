@@ -64,6 +64,8 @@ export interface RequestOptions extends RequestInit {
   /** Return `{ data, meta }` instead of just `data` (for paginated lists). */
   withMeta?: boolean;
   params?: Record<string, string | number | boolean | undefined>;
+  /** Return the raw body as a Blob (file downloads: PDF, CSV). */
+  blob?: boolean;
 }
 
 // Empty by default: requests go to same-origin /api/*, which next.config.mjs
@@ -99,7 +101,7 @@ export async function request<T = unknown>(
   endpoint: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  const { skipAuth = false, withMeta = false, params, headers: customHeaders, ...customConfig } = options;
+  const { skipAuth = false, withMeta = false, blob = false, params, headers: customHeaders, ...customConfig } = options;
 
   let url = endpoint.startsWith("http")
     ? endpoint
@@ -208,6 +210,11 @@ export async function request<T = unknown>(
       }
     }
 
+    // File download: hand back the bytes untouched.
+    if (blob && response.ok) {
+      return (await response.blob()) as T;
+    }
+
     // Parse response
     const contentType = response.headers.get("content-type");
     const isJson = contentType && contentType.includes("application/json");
@@ -252,12 +259,15 @@ export async function request<T = unknown>(
 }
 
 /**
- * The backend answers 503 MAINTENANCE_MODE to everyone but staff while the
+ * The backend answers 503 MAINTENANCE_MODE to everyone but the Super-Admin while the
  * Super-Admin has maintenance mode on: send the visitor to the notice page.
  * (Sign-in stays put so the error message shows there.)
  */
 function goToMaintenancePage() {
   if (typeof window === "undefined") return;
+  // Maintenance ends every session except the Super-Admin's (the backend
+  // already revoked it): forget it here too.
+  if (useSession.getState().role !== "superadmin") useSession.getState().clearSession();
   const path = window.location.pathname;
   if (path.startsWith("/maintenance") || path.startsWith("/signin")) return;
   window.location.href = "/maintenance";
@@ -313,8 +323,17 @@ export const apiClient = {
         { skipAuth: true }
       ),
 
+    /** New access token plus the session profile (same fields as /me). */
     refresh: () =>
-      apiClient.post<{ accessToken: string }>(
+      apiClient.post<{
+        accessToken: string;
+        userId?: string;
+        role?: UserRole;
+        name?: string;
+        email?: string;
+        photo?: string;
+        isVerified?: boolean;
+      }>(
         "/api/auth/refresh",
         {},
         { skipAuth: true }
@@ -342,6 +361,14 @@ export const apiClient = {
       apiClient.post<{ sent: boolean }>(
         "/api/auth/resend-verification",
         { email },
+        { skipAuth: true }
+      ),
+
+    /** The 6-digit code from the sign-up email. */
+    verifyEmailOtp: (email: string, code: string) =>
+      apiClient.post<{ verified: boolean }>(
+        "/api/auth/verify-email-otp",
+        { email, code },
         { skipAuth: true }
       ),
 

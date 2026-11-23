@@ -95,7 +95,7 @@ export default function ForgotPasswordPage() {
             hint="We will send a secure one-time reset link."
           />
 
-          <Button type="submit" variant="primary" fullWidth size="lg" disabled={loading}>
+          <Button loading={loading} type="submit" variant="primary" fullWidth size="lg" disabled={loading}>
             {loading ? "Sending link..." : "Send Reset Link"}
           </Button>
 

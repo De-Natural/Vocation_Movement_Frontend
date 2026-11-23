@@ -3,14 +3,19 @@
 import { useEffect, useState } from "react";
 import { PageTitle, SectionHeader } from "@/components/dashboard/widgets";
 import { Button } from "@/components/ui/Button";
-import { Input, Select, Toggle } from "@/components/ui/Input";
+import { Input, Select, Textarea, Toggle } from "@/components/ui/Input";
+import { Modal } from "@/components/ui/Modal";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SettingsIcon } from "@/components/ui/icons";
 import { useToast } from "@/components/ui/Toast";
 import { adminApi, type PlatformSettings } from "@/lib/admin-api";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { useApi, apiErrorMessage } from "@/lib/use-api";
 import { useIsSuperAdmin, useStaffBase } from "@/lib/use-staff";
 import Link from "next/link";
+
+/** Foreign currencies a gift can arrive in; each needs a naira rate to be withdrawable. */
+const FX_CURRENCIES = ["USD", "GBP", "EUR", "GHS"] as const;
 
 export default function SettingsPage() {
   const { toast } = useToast();
@@ -18,10 +23,19 @@ export default function SettingsPage() {
   // (the backend enforces this too).
   const isSuperAdmin = useIsSuperAdmin();
   const base = useStaffBase();
-  const { data, error, loading, reload, setData } = useApi(() => adminApi.settings());
+  // The message box always starts empty; the saved message is shown under it instead.
+  const [savedMessage, setSavedMessage] = useState("");
+  const { data, error, loading, reload, setData } = useApi(() =>
+    adminApi.settings().then((s) => {
+      setSavedMessage(s.maintenanceMessage ?? "");
+      return { ...s, maintenanceMessage: "" };
+    })
+  );
   // Editable copy of the saved settings.
   const [form, setForm] = useState<PlatformSettings | null>(null);
   const [saving, setSaving] = useState(false);
+  // Switching maintenance on signs everyone out and emails them: confirm first.
+  const [confirmMaintenance, setConfirmMaintenance] = useState(false);
 
   useEffect(() => {
     if (data) setForm(data);
@@ -30,9 +44,25 @@ export default function SettingsPage() {
   const set = <K extends keyof PlatformSettings>(key: K) => (value: PlatformSettings[K]) =>
     setForm((f) => (f ? { ...f, [key]: value } : f));
   const dirty = !!form && !!data && JSON.stringify(form) !== JSON.stringify(data);
+  const turningMaintenanceOn = !!form && !!data && form.maintenanceMode && !data.maintenanceMode;
 
-  async function save() {
+  function setRate(currency: string, raw: string) {
+    setForm((f) => {
+      if (!f) return f;
+      const rates = { ...f.payoutFxRates };
+      const n = Number(raw);
+      if (raw.trim() === "" || !(n > 0)) delete rates[currency];
+      else rates[currency] = n;
+      return { ...f, payoutFxRates: rates };
+    });
+  }
+
+  async function save(confirmed = false) {
     if (!form) return;
+    if (turningMaintenanceOn && !confirmed) {
+      setConfirmMaintenance(true);
+      return;
+    }
     const fee = Number(form.platformFeePercent);
     const min = Number(form.minGift);
     if (!(fee >= 0 && fee <= 100)) return toast("Platform fee must be between 0 and 100%.", "warning");
@@ -46,9 +76,26 @@ export default function SettingsPage() {
         supportEmail: form.supportEmail.trim(),
         platformFeePercent: fee,
         minGift: min,
+        // The box is emptied after every save, so empty means "keep the message
+        // already on the site" — except when switching maintenance off, which
+        // clears it so an old notice is never reused.
+        maintenanceMessage: form.maintenanceMessage.trim()
+          ? form.maintenanceMessage.trim()
+          : data?.maintenanceMode && !form.maintenanceMode
+            ? ""
+            : undefined,
       });
-      setData(saved);
-      toast("Platform settings saved.", "success");
+      const { maintenance, ...settings } = saved;
+      // Empty the message box once saved (the message itself stays on the site).
+      setSavedMessage(settings.maintenanceMessage ?? "");
+      setData({ ...settings, maintenanceMessage: "" });
+      setConfirmMaintenance(false);
+      toast(
+        maintenance
+          ? `Maintenance mode is on. ${maintenance.sessionsEnded} session(s) signed out; ${maintenance.emailsQueued} user(s) are being emailed.`
+          : "Platform settings saved.",
+        "success"
+      );
     } catch (err) {
       toast(apiErrorMessage(err, "Couldn't save settings."), "error");
     } finally {
@@ -93,12 +140,90 @@ export default function SettingsPage() {
           </SettingRow>
           <SettingRow
             title="Maintenance mode"
-            desc="Take the site offline for everyone except staff. Visitors, students and sponsors see a maintenance notice and can't sign in."
+            desc="Take the site offline for everyone except the Super-Admin. Students, sponsors and admins are signed out, see a maintenance notice and can't sign in until it's switched off."
             locked={!isSuperAdmin}
           >
             <Toggle checked={form.maintenanceMode} onChange={set("maintenanceMode")} id="maintenance" disabled={!isSuperAdmin} />
           </SettingRow>
+          {isSuperAdmin && (
+            <Textarea
+              id="maintenance-message"
+              label="Maintenance message"
+              rows={3}
+              maxLength={2000}
+              placeholder="e.g. We are upgrading Vocation Movement. The site will be back on Monday at 9:00 AM."
+              value={form.maintenanceMessage}
+              onChange={(e) => set("maintenanceMessage")(e.target.value)}
+              hint="Shown on the site while maintenance is on, and emailed to every student, sponsor and admin when you switch it on. The box empties after saving."
+            />
+          )}
+          {isSuperAdmin && savedMessage && (
+            <p className="text-caption text-muted">
+              Saved message: <span className="text-navy">&ldquo;{savedMessage}&rdquo;</span>. Leave the box empty to keep
+              it; switching maintenance off clears it.
+            </p>
+          )}
         </div>
+      </section>
+
+      {/* Exchange rates */}
+      <section className="mb-8 rounded-card bg-white p-6 shadow-card">
+        <SectionHeader title="Exchange rates (to naira)" />
+        <p className="mb-4 text-caption text-muted">
+          Naira is the platform currency. A gift paid in another currency is converted to naira when it is confirmed,
+          and that naira value counts towards bills, balances and withdrawals (it doesn&apos;t change later). Rates are
+          fetched automatically every day. Leave an override empty to use the live rate, or enter your own rate to use
+          that instead.
+          {!isSuperAdmin && " Overrides are Super-Admin only."}
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {FX_CURRENCIES.map((c) => {
+            const live = data?.liveFx?.rates[c];
+            const override = form.payoutFxRates[c];
+            return (
+              <div key={c} className="rounded-input border border-inputborder/60 p-3">
+                <p className="text-caption font-semibold text-navy">1 {c}</p>
+                <p className="mt-1 text-caption text-muted">
+                  Live: <span className="font-semibold text-navy">{live ? formatCurrency(live) : "not available yet"}</span>
+                </p>
+                <div className="mt-2">
+                  <Input
+                    label="Override (₦)"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    placeholder="Use live rate"
+                    value={override !== undefined ? String(override) : ""}
+                    onChange={(e) => setRate(c, e.target.value)}
+                    disabled={!isSuperAdmin}
+                  />
+                </div>
+                <p className="mt-1 text-label text-muted">
+                  In use:{" "}
+                  <span className="font-semibold text-navy">
+                    {override !== undefined ? `${formatCurrency(override)} (override)` : live ? `${formatCurrency(live)} (live)` : "none, gifts wait"}
+                  </span>
+                </p>
+              </div>
+            );
+          })}
+        </div>
+        <p className="mt-3 text-label text-muted">
+          {data?.liveFx ? (
+            <>
+              Live rates updated {formatDate(data.liveFx.updatedAt)}.{" "}
+              {data.liveFx.source === "ExchangeRate-API" ? (
+                <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer" className="underline">
+                  Rates By Exchange Rate API
+                </a>
+              ) : (
+                `Source: ${data.liveFx.source}.`
+              )}
+            </>
+          ) : (
+            "Live rates haven't been fetched yet; they load automatically when the server starts."
+          )}
+        </p>
       </section>
 
       {/* Giving */}
@@ -177,10 +302,39 @@ export default function SettingsPage() {
         >
           Cancel
         </Button>
-        <Button variant="primary" onClick={() => void save()} disabled={!dirty || saving}>
+        <Button loading={saving} variant="primary" onClick={() => void save()} disabled={!dirty || saving}>
           {saving ? "Saving…" : "Save changes"}
         </Button>
       </div>
+
+      <Modal
+        open={confirmMaintenance}
+        onClose={() => !saving && setConfirmMaintenance(false)}
+        title="Switch on maintenance mode?"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setConfirmMaintenance(false)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button loading={saving} variant="primary" onClick={() => void save(true)} disabled={saving}>
+              Turn on and notify everyone
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3 text-body text-navy/80">
+          <p>
+            Every student, sponsor and admin will be signed out straight away and see the maintenance page. Only you
+            (Super-Admin) can keep using the site.
+          </p>
+          <p>Everyone will also receive this message by email:</p>
+          <blockquote className="rounded-input bg-warm/60 p-3 text-caption text-navy">
+            {form.maintenanceMessage.trim() ||
+              savedMessage ||
+              "Vocation Movement is undergoing scheduled maintenance. Please check back shortly."}
+          </blockquote>
+        </div>
+      </Modal>
     </div>
   );
 }

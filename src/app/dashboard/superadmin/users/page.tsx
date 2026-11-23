@@ -187,7 +187,7 @@ export default function UsersPage() {
           action && (
             <>
               <Button variant="secondary" onClick={() => setAction(null)} disabled={busy}>Cancel</Button>
-              <Button variant={action.kind === "suspend" ? "danger" : "primary"} onClick={() => void confirmAction()} disabled={busy}>
+              <Button loading={busy} variant={action.kind === "suspend" ? "danger" : "primary"} onClick={() => void confirmAction()} disabled={busy}>
                 {busy ? "Working…" : action.kind === "suspend" ? "Suspend" : "Reactivate"}
               </Button>
             </>

@@ -41,11 +41,16 @@ const ACTION_COPY: Record<ActionKind, { title: string; label: string; hint: stri
   },
 };
 
+/** Must match MAX_ADMINS in the backend (superadmin.service.ts). */
+const MAX_ADMINS = 3;
+
 export default function ManageAdminsPage() {
   const { toast } = useToast();
   const myId = useSession((s) => s.userId);
   const { data, error, loading, reload } = useApi(() => superAdminApi.admins());
   const staff = data ?? [];
+  const adminCount = staff.filter((a) => a.tier !== "superadmin").length;
+  const atLimit = adminCount >= MAX_ADMINS;
 
   // Create admin
   const [createOpen, setCreateOpen] = useState(false);
@@ -118,9 +123,21 @@ export default function ManageAdminsPage() {
     <div className="mx-auto max-w-5xl">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <PageTitle title="Manage Admins" subtitle="Create admin accounts, and suspend or remove access. Every change is recorded in the activity log." />
-        <Button variant="primary" onClick={() => setCreateOpen(true)}>
-          <PlusIcon size={16} /> New admin
-        </Button>
+        <div className="flex flex-col items-end gap-1">
+          <Button
+            variant="primary"
+            onClick={() => setCreateOpen(true)}
+            disabled={loading || atLimit}
+            title={atLimit ? `You can have at most ${MAX_ADMINS} admins. Delete one to add another.` : undefined}
+          >
+            <PlusIcon size={16} /> New admin
+          </Button>
+          {!loading && (
+            <span className={atLimit ? "text-label font-semibold text-amber" : "text-label text-muted"}>
+              {adminCount} of {MAX_ADMINS} admins{atLimit ? " (limit reached)" : ""}
+            </span>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -196,7 +213,7 @@ export default function ManageAdminsPage() {
         footer={
           <>
             <Button variant="secondary" onClick={() => setCreateOpen(false)} disabled={creating}>Cancel</Button>
-            <Button variant="primary" onClick={() => void createAdmin()} disabled={creating}>
+            <Button loading={creating} variant="primary" onClick={() => void createAdmin()} disabled={creating}>
               {creating ? "Creating…" : "Create admin"}
             </Button>
           </>
@@ -229,7 +246,7 @@ export default function ManageAdminsPage() {
           action && (
             <>
               <Button variant="secondary" onClick={() => setAction(null)} disabled={busy}>Cancel</Button>
-              <Button variant={ACTION_COPY[action.kind].danger ? "danger" : "primary"} onClick={() => void confirmAction()} disabled={busy}>
+              <Button loading={busy} variant={ACTION_COPY[action.kind].danger ? "danger" : "primary"} onClick={() => void confirmAction()} disabled={busy}>
                 {busy ? "Working…" : ACTION_COPY[action.kind].label}
               </Button>
             </>

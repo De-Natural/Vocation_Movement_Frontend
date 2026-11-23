@@ -1,4 +1,6 @@
-import { forwardRef, type ButtonHTMLAttributes } from "react";
+"use client";
+
+import { forwardRef, useCallback, useEffect, useRef, useState, type ButtonHTMLAttributes, type MouseEvent } from "react";
 import { cn } from "@/lib/utils";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger" | "icon";
@@ -8,11 +10,13 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
   fullWidth?: boolean;
+  /** Show the spinner and block clicks (e.g. while a form submits). */
+  loading?: boolean;
 }
 
 // PRD §2.4 — pill radius for primary CTAs, 8px for secondary.
 const base =
-  "inline-flex items-center justify-center gap-2 font-sans font-semibold transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold focus-visible:outline-offset-2 disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap";
+  "relative inline-flex items-center justify-center gap-2 font-sans font-semibold transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold focus-visible:outline-offset-2 disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap";
 
 const variants: Record<Variant, string> = {
   primary:
@@ -38,8 +42,53 @@ const iconSizes: Record<Size, string> = {
   lg: "p-3",
 };
 
+/** Small CSS ring spinner in the button's text colour. */
+export function Spinner({ className }: { className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "inline-block h-[1.1em] w-[1.1em] shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent",
+        className
+      )}
+    />
+  );
+}
+
+/**
+ * The app's button. It shows a spinner when `loading` is set, and also by
+ * itself while an `onClick` that returns a Promise is still running, so
+ * every async action gives instant feedback and can't be double-clicked.
+ */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ variant = "primary", size = "md", fullWidth, className, ...props }, ref) => {
+  (
+    { variant = "primary", size = "md", fullWidth, loading, className, onClick, disabled, children, ...props },
+    ref
+  ) => {
+    const [pending, setPending] = useState(false);
+    const mounted = useRef(true);
+    useEffect(() => {
+      mounted.current = true;
+      return () => {
+        mounted.current = false;
+      };
+    }, []);
+
+    const handleClick = useCallback(
+      (e: MouseEvent<HTMLButtonElement>) => {
+        const result = onClick?.(e) as unknown;
+        if (result && typeof (result as Promise<unknown>).then === "function") {
+          setPending(true);
+          (result as Promise<unknown>).finally(() => {
+            if (mounted.current) setPending(false);
+          });
+        }
+      },
+      [onClick]
+    );
+
+    const busy = !!loading || pending;
+
     return (
       <button
         ref={ref}
@@ -48,10 +97,17 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           variants[variant],
           variant === "icon" ? iconSizes[size] : sizes[size],
           fullWidth && "w-full",
+          busy && "cursor-wait",
           className
         )}
+        onClick={onClick ? handleClick : undefined}
+        disabled={disabled || busy}
+        aria-busy={busy || undefined}
         {...props}
-      />
+      >
+        {busy && <Spinner />}
+        {variant === "icon" && busy ? null : children}
+      </button>
     );
   }
 );

@@ -208,7 +208,7 @@ export default function BrowsePage() {
                   </div>
                   {hasMore && (
                     <div className="mt-8 flex justify-center">
-                      <Button variant="secondary" onClick={loadMore} disabled={loading}>
+                      <Button loading={loading} variant="secondary" onClick={loadMore} disabled={loading}>
                         {loading ? "Loading…" : "Load more students"}
                       </Button>
                     </div>

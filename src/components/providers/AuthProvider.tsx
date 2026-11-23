@@ -34,11 +34,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           throw new Error("No access token returned");
         }
 
-        // Set access token first so the subsequent /me request has it
+        // Set access token first so a /me request (if needed) has it
         useSession.getState().setAccessToken(accessToken);
 
-        // Fetch user profile
-        const me = await apiClient.auth.me();
+        // The refresh response carries the profile; only older backends need /me.
+        const me =
+          refreshData.userId && refreshData.role
+            ? {
+                userId: refreshData.userId,
+                role: refreshData.role,
+                name: refreshData.name ?? "",
+                email: refreshData.email ?? "",
+                photo: refreshData.photo,
+              }
+            : await apiClient.auth.me();
 
         if (isMounted) {
           setSession({

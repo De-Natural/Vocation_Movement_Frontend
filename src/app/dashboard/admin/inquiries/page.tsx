@@ -214,7 +214,7 @@ export default function InquiriesPage() {
             <Button variant="secondary" onClick={() => setPendingDelete(null)} disabled={deleting}>
               Cancel
             </Button>
-            <Button variant="danger" onClick={() => void confirmDelete()} disabled={deleting}>
+            <Button loading={deleting} variant="danger" onClick={() => void confirmDelete()} disabled={deleting}>
               {deleting ? "Deleting…" : "Delete"}
             </Button>
           </>

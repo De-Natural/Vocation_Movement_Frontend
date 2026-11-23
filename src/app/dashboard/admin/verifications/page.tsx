@@ -214,7 +214,7 @@ export default function VerificationsPage() {
               <div className="mt-4 flex flex-wrap gap-2 border-t border-inputborder/40 pt-4">
                 {s.verification === "Pending Verification" && (
                   <>
-                    <Button variant="primary" size="sm" onClick={() => approve(s)} disabled={!!busyId}>
+                    <Button loading={busyId === s.id} variant="primary" size="sm" onClick={() => approve(s)} disabled={!!busyId}>
                       <CheckIcon size={15} /> {busyId === s.id ? "Approving…" : "Approve"}
                     </Button>
                     <Button variant="secondary" size="sm" onClick={() => openAction("request", s)} disabled={!!busyId}>
@@ -250,7 +250,7 @@ export default function VerificationsPage() {
           action && (
             <>
               <Button variant="secondary" onClick={() => setAction(null)} disabled={!!busyId}>Cancel</Button>
-              <Button
+              <Button loading={!!busyId}
                 variant={actionCopy[action.kind].danger ? "danger" : "primary"}
                 onClick={() => void confirmAction()}
                 disabled={!!busyId}

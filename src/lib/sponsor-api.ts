@@ -12,6 +12,8 @@ export interface SentPaymentRow {
   donorName: string;
   anonymous: boolean;
   amount: number;
+  currency?: string;
+  nairaAmount?: number | null;
   date: string;
   transactionId: string;
   status: PaymentStatus;
@@ -57,6 +59,16 @@ export const paymentsApi = {
   confirm: (paymentId: string, simulate: "success" | "decline" = "success") =>
     apiClient.post<{ paymentId: string; status: PaymentStatus }>("/api/payments/confirm", { paymentId, simulate }),
   receipt: (paymentId: string) => apiClient.get<PaymentReceipt>(`/api/payments/${paymentId}/receipt`),
+  /** Guest checkout (no account): one-time gift; the receipt is emailed to `email`. */
+  guestIntent: (gift: GiftInput & { name: string; email: string }) =>
+    apiClient.post<PaymentStart>("/api/payments/guest/intent", gift),
+  /** Guest confirm: the intent's clientSecret proves the caller started this payment. */
+  guestConfirm: (paymentId: string, clientSecret: string, simulate: "success" | "decline" = "success") =>
+    apiClient.post<{ paymentId: string; status: PaymentStatus }>("/api/payments/guest/confirm", {
+      paymentId,
+      clientSecret,
+      simulate,
+    }),
 };
 
 /** GET /api/payments/:id/receipt */

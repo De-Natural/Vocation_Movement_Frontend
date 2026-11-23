@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { saveBlob } from "@/lib/download";
 import { PageTitle } from "@/components/dashboard/widgets";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
@@ -11,7 +12,7 @@ import { useToast } from "@/components/ui/Toast";
 import { DownloadIcon, WalletIcon } from "@/components/ui/icons";
 import { adminApi, type TransactionFilters } from "@/lib/admin-api";
 import { useApi, apiErrorMessage } from "@/lib/use-api";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatGift, formatCurrency, formatDate } from "@/lib/format";
 
 const PER_PAGE = 50;
 
@@ -53,14 +54,7 @@ export default function TransactionsPage() {
   async function exportCsv() {
     setExporting(true);
     try {
-      const csv = await adminApi.transactionsCsv(filters);
-      const blob = new Blob([csv], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "vocation-transactions.csv";
-      a.click();
-      URL.revokeObjectURL(url);
+      saveBlob(await adminApi.transactionsCsv(filters), "vocation-transactions.csv");
       toast("Transactions exported to CSV.", "success");
     } catch (err) {
       toast(apiErrorMessage(err, "Export failed."), "error");
@@ -98,7 +92,7 @@ export default function TransactionsPage() {
           <Input label="From" type="date" value={from} onChange={(e) => onFilter(setFrom)(e.target.value)} />
           <Input label="To" type="date" value={to} onChange={(e) => onFilter(setTo)(e.target.value)} />
           <div className="flex items-end">
-            <Button variant="secondary" fullWidth onClick={() => void exportCsv()} disabled={exporting || count === 0}>
+            <Button loading={exporting} variant="secondary" fullWidth onClick={() => void exportCsv()} disabled={exporting || count === 0}>
               <DownloadIcon size={16} /> {exporting ? "Exporting…" : "Export CSV"}
             </Button>
           </div>
@@ -175,7 +169,7 @@ export default function TransactionsPage() {
                     </td>
                     <td className="px-4 py-3 text-navy">{r.studentName}</td>
                     <td className="px-4 py-3 text-muted">{r.billName}</td>
-                    <td className="px-4 py-3 text-right font-semibold text-navy">{formatCurrency(r.amount)}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-navy">{formatGift(r.amount, r.currency, r.nairaAmount)}</td>
                     <td className="px-4 py-3 font-mono text-accent">{r.transactionId}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
@@ -204,7 +198,7 @@ export default function TransactionsPage() {
                       <p className="text-label text-muted">{formatDate(r.date)}</p>
                     </div>
                   </div>
-                  <span className="font-display text-h3 text-navy">{formatCurrency(r.amount)}</span>
+                  <span className="font-display text-h3 text-navy">{formatGift(r.amount, r.currency, r.nairaAmount)}</span>
                 </div>
                 <div className="mt-3 space-y-1 border-t border-inputborder/40 pt-3 text-label text-muted">
                   <p><span className="text-navy">{r.studentName}</span> · {r.billName}</p>

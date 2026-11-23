@@ -12,7 +12,7 @@ import { MessageIcon, ShieldIcon, PlusIcon } from "@/components/ui/icons";
 import { messagesApi, studentApi } from "@/lib/student-api";
 import { useApi, apiErrorMessage } from "@/lib/use-api";
 import { mediaUrl } from "@/lib/media";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatGift, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Contribution } from "@/lib/types";
 
@@ -35,7 +35,7 @@ function toRecipients(payments: Contribution[]): Recipient[] {
       paymentId: p.paymentId,
       donorName: p.donorName,
       anonymous: p.anonymous,
-      label: `${p.donorName} — ${formatCurrency(p.amount)} on ${formatDate(p.date)}`,
+      label: `${p.donorName} — ${formatGift(p.amount, p.currency, p.nairaAmount)} on ${formatDate(p.date)}`,
     });
   }
   return Array.from(byPayment.values());
@@ -85,7 +85,7 @@ function Composer({
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={sending}>Cancel</Button>
-          <Button variant="primary" onClick={() => void send()} disabled={sending || !selected}>
+          <Button loading={sending} variant="primary" onClick={() => void send()} disabled={sending || !selected}>
             {sending ? "Sending…" : "Send message"}
           </Button>
         </>
@@ -344,7 +344,7 @@ export function MessagesView({ perspective }: { perspective: "student" | "sponso
                     rows={2}
                     className="flex-1 resize-none rounded-input border-[1.5px] border-inputborder bg-white px-4 py-2.5 text-body text-navy focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/25"
                   />
-                  <Button variant="primary" onClick={() => void sendReply()} disabled={replying || !reply.trim()}>
+                  <Button loading={replying} variant="primary" onClick={() => void sendReply()} disabled={replying || !reply.trim()}>
                     {replying ? "Sending…" : "Send"}
                   </Button>
                 </div>
