@@ -21,6 +21,8 @@ export interface PublicSettings {
   supportEmail: string;
   currency: string;
   maintenanceMode: boolean;
+  /** The Super-Admin's maintenance notice (null = default wording). */
+  maintenanceMessage?: string | null;
   minGift: number;
   anonymousDefault: boolean;
   platformFeePercent: number;

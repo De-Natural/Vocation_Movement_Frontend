@@ -160,7 +160,7 @@ export function ContactForm() {
             error={errors.message}
           />
         </div>
-        <Button type="submit" fullWidth className="mt-6" disabled={sending}>
+        <Button loading={sending} type="submit" fullWidth className="mt-6" disabled={sending}>
           {sending ? "Sending…" : "Send message"}
         </Button>
         <p className="mt-3 text-center text-label text-muted">

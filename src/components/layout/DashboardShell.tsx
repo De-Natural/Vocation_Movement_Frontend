@@ -18,6 +18,7 @@ import {
   UsersIcon,
   PercentIcon,
   LogOutIcon,
+  DownloadIcon,
 } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 import { useSession } from "@/lib/store";
@@ -35,6 +36,7 @@ const navByRole: Record<UserRole, NavItem[]> = {
     { href: "/dashboard/student", label: "Dashboard", icon: <GridIcon size={20} /> },
     { href: "/dashboard/student/bills", label: "Bill Board", icon: <WalletIcon size={20} /> },
     { href: "/dashboard/student/payments", label: "Payments", icon: <ChartIcon size={20} /> },
+    { href: "/dashboard/student/withdraw", label: "Withdraw", icon: <DownloadIcon size={20} /> },
     { href: "/dashboard/student/messages", label: "Messages", icon: <MessageIcon size={20} /> },
   ],
   sponsor: [
@@ -47,6 +49,7 @@ const navByRole: Record<UserRole, NavItem[]> = {
     { href: "/dashboard/admin", label: "Overview", icon: <GridIcon size={20} /> },
     { href: "/dashboard/admin/verifications", label: "Verifications", icon: <ShieldIcon size={20} /> },
     { href: "/dashboard/admin/transactions", label: "Transactions", icon: <WalletIcon size={20} /> },
+    { href: "/dashboard/admin/withdrawals", label: "Withdrawals", icon: <DownloadIcon size={20} /> },
     { href: "/dashboard/admin/inquiries", label: "Inquiries", icon: <MessageIcon size={20} /> },
     { href: "/dashboard/admin/reports", label: "Reports", icon: <FileIcon size={20} /> },
     { href: "/dashboard/admin/settings", label: "Settings", icon: <SettingsIcon size={20} /> },
@@ -62,6 +65,7 @@ const navByRole: Record<UserRole, NavItem[]> = {
     { href: "/dashboard/superadmin/commission", label: "Commission", icon: <PercentIcon size={20} /> },
     { href: "/dashboard/superadmin/verifications", label: "Verifications", icon: <ShieldIcon size={20} /> },
     { href: "/dashboard/superadmin/transactions", label: "Transactions", icon: <WalletIcon size={20} /> },
+    { href: "/dashboard/superadmin/withdrawals", label: "Withdrawals", icon: <DownloadIcon size={20} /> },
     { href: "/dashboard/superadmin/inquiries", label: "Inquiries", icon: <MessageIcon size={20} /> },
     { href: "/dashboard/superadmin/reports", label: "Reports", icon: <FileIcon size={20} /> },
     { href: "/dashboard/superadmin/settings", label: "Settings", icon: <SettingsIcon size={20} /> },

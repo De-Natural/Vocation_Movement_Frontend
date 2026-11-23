@@ -14,7 +14,7 @@ import {
   HeartHandIcon,
 } from "@/components/ui/icons";
 import { BillStatusBadge } from "./StatusBadges";
-import { formatCurrency, formatDate, pct } from "@/lib/format";
+import { formatGift, formatCurrency, formatDate, pct } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /**
@@ -166,7 +166,7 @@ export function BillCard({
                     <p className="truncate text-caption font-semibold text-navy">{c.donorName}</p>
                     <p className="text-caption text-muted">{formatDate(c.date)}</p>
                   </div>
-                  <span className="font-semibold text-success">{formatCurrency(c.amount)}</span>
+                  <span className="font-semibold text-success">{formatGift(c.amount, c.currency, c.nairaAmount)}</span>
                 </div>
               ))}
             </div>

@@ -1,13 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { saveBlob } from "@/lib/download";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Select, Input } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PaymentStatusBadge, RecurringBadge } from "./StatusBadges";
 import { DownloadIcon, WalletIcon } from "@/components/ui/icons";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatGift, formatDate } from "@/lib/format";
 import { useToast } from "@/components/ui/Toast";
 import type { Contribution } from "@/lib/types";
 
@@ -46,26 +47,27 @@ export function PaymentHistoryTable({
 
   function exportCsv() {
     const header = perspective === "sent"
-      ? ["Date", "Student", "Bill", "Amount", "Transaction ID", "Status"]
-      : ["Date", "Donor", "Bill", "Amount", "Transaction ID", "Status"];
+      ? ["Date", "Student", "Bill", "Amount", "Currency", "Amount (NGN)", "Transaction ID", "Status"]
+      : ["Date", "Donor", "Bill", "Amount", "Currency", "Amount (NGN)", "Transaction ID", "Status"];
+    // Quote every cell: dates like "Nov 17, 2026" contain commas.
+    const cell = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const lines = filtered.map((r) =>
       [
         formatDate(r.date),
         perspective === "sent" ? r.studentName : r.donorName,
         r.billName ?? "",
         r.amount.toFixed(2),
+        r.currency ?? "NGN",
+        (r.currency ?? "NGN") === "NGN" ? r.amount.toFixed(2) : typeof r.nairaAmount === "number" ? r.nairaAmount.toFixed(2) : "",
         r.transactionId,
         r.status,
-      ].join(",")
+      ]
+        .map(cell)
+        .join(",")
     );
-    const csv = [header.join(","), ...lines].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `payment-history-${perspective}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const csv = [header.map(cell).join(","), ...lines].join("\r\n");
+    // BOM so Excel opens names with accents correctly.
+    saveBlob(new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" }), `payment-history-${perspective}.csv`);
     toast("Payment history exported to CSV.", "success");
   }
 
@@ -157,7 +159,7 @@ export function PaymentHistoryTable({
                       </div>
                     </td>
                     <td className="px-5 py-3 text-caption text-navy">{r.billName ?? "—"}</td>
-                    <td className="px-5 py-3 text-caption font-semibold text-navy">{formatCurrency(r.amount)}</td>
+                    <td className="px-5 py-3 text-caption font-semibold text-navy">{formatGift(r.amount, r.currency, r.nairaAmount)}</td>
                     <td className="px-5 py-3">
                       <span className="font-mono text-caption text-accent">{r.transactionId}</span>
                     </td>
@@ -182,7 +184,7 @@ export function PaymentHistoryTable({
                       <p className="text-label text-muted">{formatDate(r.date)}</p>
                     </div>
                   </div>
-                  <span className="font-semibold text-navy">{formatCurrency(r.amount)}</span>
+                  <span className="font-semibold text-navy">{formatGift(r.amount, r.currency, r.nairaAmount)}</span>
                 </div>
                 <div className="mt-2 flex items-center justify-between">
                   <span className="font-mono text-label text-accent">{r.transactionId}</span>

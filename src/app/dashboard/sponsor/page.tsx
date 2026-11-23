@@ -61,10 +61,10 @@ export default function SponsorDashboardPage() {
 
       {/* KPIs */}
       <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile label="Total Given" value={kpis.totalGiven} prefix="$" compact icon={<WalletIcon size={18} />} tone="gold" />
+        <StatTile label="Total Given" value={kpis.totalGiven} prefix="₦" compact icon={<WalletIcon size={18} />} tone="gold" />
         <StatTile label="Students Sponsored" value={kpis.studentsSponsored} icon={<UsersIcon size={18} />} tone="accent" />
         <StatTile label="Active Recurring" value={kpis.activeRecurring} icon={<RepeatIcon size={18} />} tone="success" />
-        <StatTile label="Monthly Commitment" value={kpis.monthlyCommitment} prefix="$" icon={<HeartHandIcon size={18} />} tone="navy" hint={`≈ ${formatCurrency(kpis.monthlyCommitment * 12)} / year`} />
+        <StatTile label="Monthly Commitment" value={kpis.monthlyCommitment} prefix="₦" icon={<HeartHandIcon size={18} />} tone="navy" hint={`≈ ${formatCurrency(kpis.monthlyCommitment * 12)} / year`} />
       </div>
 
       {/* Impact snapshot */}

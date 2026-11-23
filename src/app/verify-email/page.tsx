@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AuthShell } from "@/components/auth/AuthShell";
+import { EmailOtpForm } from "@/components/auth/EmailOtpForm";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { CheckCircleIcon, AlertIcon } from "@/components/ui/icons";
@@ -21,6 +22,9 @@ function VerifyEmailContent() {
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [resendEmail, setResendEmail] = useState("");
   const [isResending, setIsResending] = useState(false);
+  // Code entry: which email the code was sent to (?email= pre-fills it).
+  const [codeEmail, setCodeEmail] = useState<string | null>(searchParams.get("email"));
+  const [codeSent, setCodeSent] = useState(false);
 
   // Tokens are single-use: verify each one exactly once, even when React
   // re-runs the effect (Strict Mode remount, or a new `toast` identity).
@@ -56,8 +60,7 @@ function VerifyEmailContent() {
     setIsResending(true);
     try {
       await apiClient.auth.resendVerification(resendEmail.trim());
-      toast("If that account still needs verifying, a new link is on its way.", "success");
-      setResendEmail("");
+      toast("If that account still needs verifying, a new code is on its way.", "success");
     } catch (err: unknown) {
       toast(
         err instanceof Error ? err.message : "Failed to resend verification email.",
@@ -122,7 +125,7 @@ function VerifyEmailContent() {
 
           <form onSubmit={handleResend} className="space-y-4">
             <p className="text-caption font-semibold text-navy">
-              Request a new verification link:
+              Get a new verification code:
             </p>
             <Input
               type="email"
@@ -131,7 +134,7 @@ function VerifyEmailContent() {
               onChange={(e) => setResendEmail(e.target.value)}
               required
             />
-            <Button
+            <Button loading={isResending}
               type="submit"
               variant="secondary"
               fullWidth
@@ -154,20 +157,45 @@ function VerifyEmailContent() {
     );
   }
 
-  // 4. Idle State (User landed without token, e.g., right after signup)
+  // 4. Code entry: verify with the 6-digit code we email.
+  if (codeEmail) {
+    return (
+      <AuthShell title="Verify your email" subtitle="Enter the code we sent to your inbox.">
+        <EmailOtpForm
+          email={codeEmail}
+          startCooldown={codeSent}
+          onVerified={() => setStatus("success")}
+        />
+        <div className="mt-6 text-center">
+          <button
+            type="button"
+            onClick={() => setCodeEmail(null)}
+            className="text-caption font-semibold text-accent hover:underline"
+          >
+            Use a different email
+          </button>
+        </div>
+      </AuthShell>
+    );
+  }
+
+  // 5. Idle State: ask for the email, then send a code.
   return (
     <AuthShell
-      title="Check Your Inbox"
-      subtitle="We sent a verification link to your email address."
+      title="Verify your email"
+      subtitle="We'll send a 6-digit code to your email address."
     >
       <div className="space-y-6">
-        <p className="text-body text-navy/80">
-          Please click the link inside the confirmation email to complete your registration
-          and activate your account.
-        </p>
-
-        <form onSubmit={handleResend} className="space-y-4 rounded-card bg-warm/50 p-5">
-          <p className="text-caption font-semibold text-navy">Didn&apos;t receive the email?</p>
+        <form
+          onSubmit={async (e) => {
+            await handleResend(e);
+            if (resendEmail.trim()) {
+              setCodeSent(true);
+              setCodeEmail(resendEmail.trim());
+            }
+          }}
+          className="space-y-4 rounded-card bg-warm/50 p-5"
+        >
           <Input
             type="email"
             label="Email address"
@@ -176,14 +204,21 @@ function VerifyEmailContent() {
             onChange={(e) => setResendEmail(e.target.value)}
             required
           />
-          <Button
+          <Button loading={isResending}
             type="submit"
-            variant="secondary"
+            variant="primary"
             fullWidth
             disabled={isResending}
           >
-            {isResending ? "Sending..." : "Resend Verification Email"}
+            {isResending ? "Sending..." : "Send me a code"}
           </Button>
+          <button
+            type="button"
+            onClick={() => resendEmail.trim() && (setCodeSent(false), setCodeEmail(resendEmail.trim()))}
+            className="block w-full text-center text-caption font-semibold text-accent hover:underline"
+          >
+            I already have a code
+          </button>
         </form>
 
         <div className="text-center">

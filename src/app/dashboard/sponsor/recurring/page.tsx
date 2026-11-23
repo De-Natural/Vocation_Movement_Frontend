@@ -24,6 +24,8 @@ export default function RecurringPage() {
 
   const activeCount = subs.filter((s) => s.active).length;
   const monthlyTotal = subs.filter((s) => s.active).reduce((sum, s) => sum + s.amount, 0);
+  // Monthly gifts are charged in the sponsor's own currency.
+  const monthlyCurrency = subs.find((s) => s.active)?.currency ?? subs[0]?.currency;
 
   async function toggle(sub: RecurringSponsorship) {
     setBusyId(sub.id);
@@ -72,8 +74,8 @@ export default function RecurringPage() {
         </div>
         <div className="rounded-card bg-white p-5 shadow-card">
           <p className="text-caption font-semibold uppercase tracking-wide text-muted">Monthly commitment</p>
-          <p className="mt-2 font-display text-h1 leading-none text-navy">{formatCurrency(monthlyTotal)}</p>
-          <p className="mt-1 text-caption text-muted">≈ {formatCurrency(monthlyTotal * 12)} per year</p>
+          <p className="mt-2 font-display text-h1 leading-none text-navy">{formatCurrency(monthlyTotal, monthlyCurrency)}</p>
+          <p className="mt-1 text-caption text-muted">≈ {formatCurrency(monthlyTotal * 12, monthlyCurrency)} per year</p>
         </div>
       </div>
 
@@ -125,7 +127,7 @@ export default function RecurringPage() {
 
               <div className="flex items-center justify-between gap-4 sm:justify-end">
                 <span className="font-display text-h2 text-navy">
-                  {formatCurrency(s.amount)}
+                  {formatCurrency(s.amount, s.currency)}
                   <span className="text-caption font-normal text-muted"> /mo</span>
                 </span>
                 <div className="flex items-center gap-2">
@@ -153,14 +155,14 @@ export default function RecurringPage() {
             <Button variant="secondary" onClick={() => setConfirmCancel(null)} disabled={!!busyId}>
               Keep it
             </Button>
-            <Button variant="danger" onClick={() => confirmCancel && void cancel(confirmCancel)} disabled={!!busyId}>
+            <Button loading={!!busyId} variant="danger" onClick={() => confirmCancel && void cancel(confirmCancel)} disabled={!!busyId}>
               {busyId ? "Cancelling…" : "Cancel gift"}
             </Button>
           </>
         }
       >
         <p className="text-body text-navy/80">
-          Your {confirmCancel ? formatCurrency(confirmCancel.amount) : ""} monthly gift to {confirmCancel?.studentName} will stop.
+          Your {confirmCancel ? formatCurrency(confirmCancel.amount, confirmCancel.currency) : ""} monthly gift to {confirmCancel?.studentName} will stop.
           To pause it temporarily instead, use Pause.
         </p>
       </Modal>

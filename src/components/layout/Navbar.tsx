@@ -6,6 +6,8 @@ import Image from "next/image";
 import { Button } from "@/components/ui/Button";
 import { MenuIcon, XIcon } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
+import { useSession } from "@/lib/store";
+import { UserMenu } from "./UserMenu";
 import VocationIcon from "@/assest/images/Agonizing Jesus logo.jpg";
 
 export function Logo({ light = false }: { light?: boolean }) {
@@ -35,8 +37,14 @@ const navLinks = [
 ];
 
 // PRD §4.1 Navbar — Logo left, nav links centre, Sign In + Get Started right.
+// Signed-in users see their profile menu instead of Sign In / Get Started.
 export function Navbar() {
   const [open, setOpen] = useState(false);
+  const role = useSession((s) => s.role);
+  const status = useSession((s) => s.status);
+  const signedIn = status === "authenticated" && !!role;
+  // While the session is being restored, show a placeholder (no Sign In flash).
+  const checking = status === "idle" || status === "loading";
 
   return (
     <header className="sticky top-0 z-40 border-b border-inputborder/30 bg-cream/85 backdrop-blur-md">
@@ -48,7 +56,7 @@ export function Navbar() {
             <Link
               key={l.href}
               href={l.href}
-              className="text-body font-medium text-navy/80 transition-colors hover:text-gold"
+              className="text-sm font-medium text-navy/80 transition-colors hover:text-gold"
             >
               {l.label}
             </Link>
@@ -56,12 +64,20 @@ export function Navbar() {
         </div>
 
         <div className="hidden items-center gap-3 md:flex">
-          <Link href="/signin">
-            <Button variant="ghost" size="sm">Sign In</Button>
-          </Link>
-          <Link href="/register">
-            <Button variant="primary" size="sm">Get Started</Button>
-          </Link>
+          {signedIn ? (
+            <UserMenu />
+          ) : checking ? (
+            <span className="h-9 w-32 animate-pulse rounded-pill bg-navy/10" aria-hidden="true" />
+          ) : (
+            <>
+              <Link href="/signin">
+                <Button variant="ghost" size="sm">Sign In</Button>
+              </Link>
+              <Link href="/register">
+                <Button variant="primary" size="sm">Get Started</Button>
+              </Link>
+            </>
+          )}
         </div>
 
         <button
@@ -88,12 +104,18 @@ export function Navbar() {
               </Link>
             ))}
             <div className="mt-2 flex flex-col gap-2">
-              <Link href="/signin" onClick={() => setOpen(false)}>
-                <Button variant="secondary" size="sm" fullWidth>Sign In</Button>
-              </Link>
-              <Link href="/register" onClick={() => setOpen(false)}>
-                <Button variant="primary" size="sm" fullWidth>Get Started</Button>
-              </Link>
+              {signedIn ? (
+                <UserMenu onNavigate={() => setOpen(false)} />
+              ) : checking ? null : (
+                <>
+                  <Link href="/signin" onClick={() => setOpen(false)}>
+                    <Button variant="secondary" size="sm" fullWidth>Sign In</Button>
+                  </Link>
+                  <Link href="/register" onClick={() => setOpen(false)}>
+                    <Button variant="primary" size="sm" fullWidth>Get Started</Button>
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         </div>

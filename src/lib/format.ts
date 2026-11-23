@@ -1,20 +1,49 @@
 /** Currency + number formatting helpers used across dashboards. */
 
-export function formatCurrency(amount: number, currency = "USD"): string {
+/**
+ * Naira is the platform currency: bills, balances, progress bars and totals
+ * are all in naira. Gifts paid in another currency keep their original amount
+ * and get a naira value locked at the Super-Admin's exchange rate.
+ */
+export const PLATFORM_CURRENCY = "NGN";
+
+/** "₦7,138" / "$50" / "€20" ("narrowSymbol" shows ₦, not "NGN"). */
+export function formatCurrency(amount: number, currency: string = PLATFORM_CURRENCY): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency,
+    currencyDisplay: "narrowSymbol",
     maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
   }).format(amount);
 }
 
-export function formatCompact(amount: number, currency = "USD"): string {
+export function formatCompact(amount: number, currency: string = PLATFORM_CURRENCY): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency,
+    currencyDisplay: "narrowSymbol",
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(amount);
+}
+
+/** The ₦ / $ / € sign alone, e.g. for an input prefix. */
+export function currencySymbol(currency: string = PLATFORM_CURRENCY): string {
+  return (
+    new Intl.NumberFormat("en-US", { style: "currency", currency, currencyDisplay: "narrowSymbol" })
+      .formatToParts(0)
+      .find((p) => p.type === "currency")?.value ?? currency
+  );
+}
+
+/**
+ * A single gift: naira as is; another currency as "$50 (₦75,000)", or just
+ * "$50" while that currency has no exchange rate yet.
+ */
+export function formatGift(amount: number, currency?: string, nairaAmount?: number | null): string {
+  if (!currency || currency === PLATFORM_CURRENCY) return formatCurrency(amount);
+  const original = formatCurrency(amount, currency);
+  return typeof nairaAmount === "number" ? `${original} (${formatCurrency(nairaAmount)})` : original;
 }
 
 export function formatDate(iso: string): string {

@@ -77,7 +77,7 @@ export default function SuperAdminOverviewPage() {
           tone="success"
           hint={counts.suspendedSponsors ? `${counts.suspendedSponsors} suspended` : undefined}
         />
-        <StatTile label="Funds Raised" value={data.fundsRaised} prefix="$" compact icon={<WalletIcon size={18} />} tone="gold" />
+        <StatTile label="Funds Raised" value={data.fundsRaised} prefix="₦" compact icon={<WalletIcon size={18} />} tone="gold" />
       </div>
 
       <div className="mb-8 grid gap-6 lg:grid-cols-[1fr_1.4fr]">

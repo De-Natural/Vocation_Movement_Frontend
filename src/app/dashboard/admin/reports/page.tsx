@@ -9,16 +9,29 @@ import { useToast } from "@/components/ui/Toast";
 import { DownloadIcon, FileIcon, ChartIcon } from "@/components/ui/icons";
 import { adminApi, type ReportKind } from "@/lib/admin-api";
 import { useApi, apiErrorMessage } from "@/lib/use-api";
-import { mediaUrl } from "@/lib/media";
+import { downloadApiFile } from "@/lib/download";
 import { formatCurrency, formatDate, pct } from "@/lib/format";
 
 const thisMonth = () => new Date().toISOString().slice(0, 7); // YYYY-MM
+const pdfName = (title: string) =>
+  `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "report"}.pdf`;
 
 export default function ReportsPage() {
   const { toast } = useToast();
   const { data, error, loading, reload } = useApi(() => adminApi.reports());
   const { data: overview } = useApi(() => adminApi.overview());
   const [busy, setBusy] = useState<string | null>(null);
+
+  async function download(id: string, url: string, title: string) {
+    setBusy(id);
+    try {
+      await downloadApiFile(url, pdfName(title));
+    } catch (err) {
+      toast(apiErrorMessage(err, "Couldn't download the report."), "error");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   const congregations = [...(data?.byCongregation ?? [])].sort((a, b) => b.raised - a.raised);
   const generated = data?.generated ?? [];
@@ -27,8 +40,8 @@ export default function ReportsPage() {
     setBusy(key);
     try {
       const report = await adminApi.generateReport(body);
-      toast(`“${report.title}” generated.`, "success");
-      window.open(mediaUrl(report.url), "_blank", "noopener,noreferrer");
+      await downloadApiFile(report.url, pdfName(report.title));
+      toast(`“${report.title}” downloaded.`, "success");
       void reload();
     } catch (err) {
       toast(apiErrorMessage(err, "Couldn't generate the report."), "error");
@@ -69,7 +82,7 @@ export default function ReportsPage() {
             </span>
             <h3 className="mt-3 font-display text-h3 text-navy">{r.title}</h3>
             <p className="mt-1 flex-1 text-caption text-muted">{r.desc}</p>
-            <Button
+            <Button loading={busy === r.key}
               variant="secondary"
               size="sm"
               className="mt-4"
@@ -124,7 +137,7 @@ export default function ReportsPage() {
                         </p>
                         <p className="text-label text-muted">{p}% funded</p>
                       </div>
-                      <Button
+                      <Button loading={busy === key}
                         variant="secondary"
                         size="sm"
                         disabled={!!busy}
@@ -163,14 +176,14 @@ export default function ReportsPage() {
                   <p className="text-label text-muted">{formatDate(g.createdAt)}</p>
                 </div>
                 {g.url && (
-                  <a
-                    href={mediaUrl(g.url)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-caption font-semibold text-accent hover:underline"
+                  <button
+                    type="button"
+                    onClick={() => void download(g.id, g.url!, g.title)}
+                    disabled={!!busy}
+                    className="inline-flex items-center gap-1 text-caption font-semibold text-accent hover:underline disabled:opacity-50"
                   >
-                    <DownloadIcon size={14} /> Download
-                  </a>
+                    <DownloadIcon size={14} /> {busy === g.id ? "Downloading…" : "Download"}
+                  </button>
                 )}
               </div>
             ))}

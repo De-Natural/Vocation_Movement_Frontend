@@ -64,7 +64,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <Ctx.Provider value={{ toast }}>
       {children}
       <div
-        className="fixed bottom-6 right-6 z-[60] flex w-full max-w-sm flex-col gap-3"
+        className="pointer-events-none fixed right-4 top-4 z-[60] flex w-[calc(100%-2rem)] max-w-sm flex-col gap-3 sm:right-6 sm:top-6"
         aria-live="polite"
         aria-atomic="true"
       >
@@ -75,11 +75,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               <motion.div
                 key={t.id}
                 layout
-                initial={{ opacity: 0, x: 24, scale: 0.95 }}
-                animate={{ opacity: 1, x: 0, scale: 1 }}
+                initial={{ opacity: 0, y: -16, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, x: 24, scale: 0.9 }}
                 transition={{ type: "spring", damping: 24, stiffness: 320 }}
-                className="flex items-start gap-3 overflow-hidden rounded-card bg-white p-4 shadow-cardhover"
+                className="pointer-events-auto flex items-start gap-3 overflow-hidden rounded-card bg-white p-4 shadow-cardhover"
               >
                 <div className={cn("mt-0.5", c.text)}>{c.icon}</div>
                 <p className="flex-1 text-body text-navy">{t.message}</p>

@@ -20,7 +20,7 @@ import {
 import { studentApi } from "@/lib/student-api";
 import { useApi } from "@/lib/use-api";
 import { mediaUrl } from "@/lib/media";
-import { formatCurrency, formatDate, pct } from "@/lib/format";
+import { formatGift, formatCurrency, formatDate, pct } from "@/lib/format";
 import type { Contribution, Student } from "@/lib/types";
 
 /** Concrete, data-driven suggestions for raising profile completion. */
@@ -113,7 +113,7 @@ export default function StudentDashboard() {
             <div className="w-full border-t border-white/15 pt-4 sm:w-auto sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0">
               <p className="text-caption text-cream/70">Total received</p>
               <p className="font-display text-h1 text-gold">
-                <CountUp value={kpis.totalRaised} prefix="$" />
+                <CountUp value={kpis.totalRaised} prefix="₦" />
               </p>
             </div>
           </div>
@@ -125,7 +125,7 @@ export default function StudentDashboard() {
         <StatTile
           label="Total Funds Received"
           value={kpis.totalRaised}
-          prefix="$"
+          prefix="₦"
           icon={<WalletIcon size={18} />}
           tone="success"
           hint="Across all bills, to date"
@@ -242,7 +242,7 @@ export default function StudentDashboard() {
                       <p className="truncate text-caption font-semibold text-navy">{p.donorName}</p>
                       <p className="text-label text-muted">{formatDate(p.date)}</p>
                     </div>
-                    <span className="font-semibold text-success">+{formatCurrency(p.amount)}</span>
+                    <span className="font-semibold text-success">+{formatGift(p.amount, p.currency, p.nairaAmount)}</span>
                   </div>
                 ))}
               </div>

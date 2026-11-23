@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AuthShell } from "@/components/auth/AuthShell";
@@ -19,6 +19,34 @@ const roles: { value: SignInRole; label: string }[] = [
   { value: "admin", label: "Admin" },
 ];
 
+/**
+ * "Remember me": keeps the email and the chosen role on this device so the
+ * form is filled in next time. The password is never stored by the site; the
+ * browser's own password manager offers to save it (autocomplete hints below).
+ */
+const REMEMBER_KEY = "vm_remember_signin";
+
+function readRemembered(): { email: string; role: SignInRole } | null {
+  try {
+    const raw = localStorage.getItem(REMEMBER_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as { email?: unknown; role?: unknown };
+    const role = roles.find((r) => r.value === v.role)?.value;
+    return typeof v.email === "string" && role ? { email: v.email, role } : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeRemembered(value: { email: string; role: SignInRole } | null) {
+  try {
+    if (value) localStorage.setItem(REMEMBER_KEY, JSON.stringify(value));
+    else localStorage.removeItem(REMEMBER_KEY);
+  } catch {
+    // Storage blocked (private mode): the form simply won't be prefilled.
+  }
+}
+
 /** Only follow same-site relative redirects (blocks //evil.com open redirects). */
 function safeRedirect(path: string | null): string | null {
   return path && path.startsWith("/") && !path.startsWith("//") ? path : null;
@@ -29,12 +57,27 @@ function SignInForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [remember, setRemember] = useState(false);
 
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectParam = safeRedirect(searchParams.get("redirect"));
   const { toast } = useToast();
   const setSession = useSession((s) => s.setSession);
+  const roleParam = searchParams.get("role");
+
+  // Prefill from "Remember me" (a ?role= link, e.g. "sign in as sponsor", still wins for the tab).
+  useEffect(() => {
+    const saved = readRemembered();
+    const linked = roles.find((r) => r.value === roleParam)?.value;
+    if (saved) {
+      setEmail(saved.email);
+      setRole(linked ?? saved.role);
+      setRemember(true);
+    } else if (linked) {
+      setRole(linked);
+    }
+  }, [roleParam]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -46,6 +89,8 @@ function SignInForm() {
         password,
         role,
       });
+
+      writeRemembered(remember ? { email: email.trim(), role } : null);
 
       setSession({
         accessToken: response.accessToken,
@@ -101,6 +146,7 @@ function SignInForm() {
           label="Email"
           name="email"
           type="email"
+          autoComplete="username"
           required
           placeholder="you@example.com"
           value={email}
@@ -110,6 +156,7 @@ function SignInForm() {
           label="Password"
           name="password"
           type="password"
+          autoComplete="current-password"
           required
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -119,6 +166,12 @@ function SignInForm() {
           <label className="flex items-center gap-2 text-muted">
             <input
               type="checkbox"
+              checked={remember}
+              onChange={(e) => {
+                setRemember(e.target.checked);
+                // Unticking forgets this device's saved email straight away.
+                if (!e.target.checked) writeRemembered(null);
+              }}
               className="h-4 w-4 rounded border-inputborder text-gold focus:ring-gold"
             />
             Remember me
@@ -131,7 +184,7 @@ function SignInForm() {
           </Link>
         </div>
 
-        <Button type="submit" variant="primary" fullWidth size="lg" disabled={loading}>
+        <Button loading={loading} type="submit" variant="primary" fullWidth size="lg" disabled={loading}>
           {loading ? "Signing In..." : "Sign In"}
         </Button>
 

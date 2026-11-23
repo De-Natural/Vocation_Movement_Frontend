@@ -130,7 +130,7 @@ export default function CommissionPage() {
         footer={
           <>
             <Button variant="secondary" onClick={() => setConfirmOpen(false)} disabled={saving}>Cancel</Button>
-            <Button variant="primary" onClick={() => void save()} disabled={saving}>
+            <Button loading={saving} variant="primary" onClick={() => void save()} disabled={saving}>
               {saving ? "Saving…" : `Set to ${next}%`}
             </Button>
           </>

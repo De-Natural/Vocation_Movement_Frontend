@@ -179,7 +179,7 @@ export function ImpactNumbers() {
 
   const stats = [
     { label: "Students Supported", value: platformStats.studentsSupported, prefix: "", suffix: "" },
-    { label: "Total Funds Raised", value: platformStats.fundsRaised, prefix: "$", suffix: "", compact: true },
+    { label: "Total Funds Raised", value: platformStats.fundsRaised, prefix: "₦", suffix: "", compact: true },
     { label: "Generous Sponsors", value: platformStats.sponsors, prefix: "", suffix: "" },
     { label: "Active Sponsorships", value: platformStats.activeSponsorships, prefix: "", suffix: "" },
   ];
@@ -260,7 +260,7 @@ export function Testimonials() {
 export function ClosingCTA() {
   return (
     <section id="about" className="page-container pb-section">
-      <div className="relative overflow-hidden rounded-card bg-gradient-to-br from-gold to-gold-dark px-8 py-14 text-center text-white md:py-20">
+      <div className="relative mt-8 overflow-hidden rounded-card bg-gradient-to-br from-gold to-gold-dark px-8 py-14 text-center text-white md:py-20">
         <div className="relative mx-auto max-w-2xl">
           <UsersIcon size={40} className="mx-auto mb-5 opacity-90" />
           <h2 className="font-display text-h1 text-white">Begin Your Journey of Generosity</h2>

@@ -117,7 +117,7 @@ function ResetPasswordContent() {
             onChange={(e) => setConfirmPassword(e.target.value)}
           />
 
-          <Button
+          <Button loading={loading}
             type="submit"
             variant="primary"
             fullWidth
